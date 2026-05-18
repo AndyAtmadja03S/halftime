@@ -4,7 +4,11 @@ import { env } from "./env.js";
 import { createLogger } from "./log.js";
 
 const log = createLogger("openai");
-const client = new OpenAI({ apiKey: env.openaiApiKey });
+const client = new OpenAI({
+  apiKey: env.openaiApiKey,
+  timeout: 30_000,
+  maxRetries: 1,
+});
 
 export const CATEGORIES = [
   "rain",

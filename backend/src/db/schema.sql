@@ -21,13 +21,17 @@ create table if not exists posts (
   latitude double precision,
   longitude double precision,
   created_at timestamptz not null default now(),
-  post_date date generated always as ((created_at at time zone 'UTC')::date) stored,
-  unique (device_id, post_date)
+  post_date date generated always as ((created_at at time zone 'UTC')::date) stored
 );
 
 -- For pre-existing installs (run safely):
 alter table posts add column if not exists latitude double precision;
 alter table posts add column if not exists longitude double precision;
+
+-- Migration: allow multiple posts per device per day.
+-- The unique constraint was previously named posts_device_id_post_date_key
+-- on most Supabase installs; drop it if it still exists.
+alter table posts drop constraint if exists posts_device_id_post_date_key;
 
 create index if not exists posts_created_at_idx on posts (created_at desc);
 create index if not exists posts_device_created_idx on posts (device_id, created_at desc);

@@ -66,23 +66,6 @@ postsRouter.post(
       }
 
       const deviceId = req.deviceId!;
-      const today = new Date().toISOString().slice(0, 10);
-
-      const { data: existing, error: existingErr } = await supabase
-        .from("posts")
-        .select("id")
-        .eq("device_id", deviceId)
-        .eq("post_date", today)
-        .maybeSingle();
-      if (existingErr) {
-        rlog.error("supabase dedupe-check failed", existingErr);
-        throw existingErr;
-      }
-      if (existing) {
-        rlog.info("rejected: already posted today");
-        res.status(409).json({ error: "already_posted_today" });
-        return;
-      }
 
       const buffer = req.file.buffer;
       const objectPath = `${deviceId}/${randomUUID()}.wav`;
@@ -131,10 +114,6 @@ postsRouter.post(
       if (insertErr) {
         rlog.error("db.insert ✖ failed; cleaning up storage object", insertErr);
         await supabase.storage.from(BUCKET).remove([objectPath]);
-        if (insertErr.code === "23505") {
-          res.status(409).json({ error: "already_posted_today" });
-          return;
-        }
         throw insertErr;
       }
       rlog.info("db.insert ← done", {
