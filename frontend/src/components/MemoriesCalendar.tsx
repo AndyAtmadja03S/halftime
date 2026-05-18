@@ -42,15 +42,20 @@ export function MemoriesCalendar({
   hasNext,
 }: Props) {
   const cells = useMemo(() => {
-    const prefix = `${year}-${pad(monthIndex + 1)}-`;
-    return days
-      .filter((d) => d.date.startsWith(prefix))
-      .map((d) => ({
-        iso: d.date,
-        day: Number(d.date.slice(-2)),
-        emoji: d.emoji,
-      }))
-      .sort((a, b) => b.day - a.day);
+    const total = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+    const now = new Date();
+    const isCurrentMonth =
+      now.getUTCFullYear() === year && now.getUTCMonth() === monthIndex;
+    const lastDay = isCurrentMonth ? now.getUTCDate() : total;
+
+    const byDate = new Map(days.map((d) => [d.date, d]));
+
+    return Array.from({ length: lastDay }, (_, i) => {
+      const day = i + 1;
+      const iso = `${year}-${pad(monthIndex + 1)}-${pad(day)}`;
+      const entry = byDate.get(iso);
+      return { day, iso, emoji: entry?.emoji ?? null };
+    });
   }, [days, year, monthIndex]);
 
   return (
@@ -69,7 +74,6 @@ export function MemoriesCalendar({
         <span className="text-xs uppercase tracking-[var(--tracking-chrome)] text-mist-200">
           {MONTHS[monthIndex]} {year}
         </span>
-
         <button
           type="button"
           onClick={onNext}
