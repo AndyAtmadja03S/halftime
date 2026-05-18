@@ -1,12 +1,12 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { TabBar, type Tab } from "./components/TabBar";
 import { TopBar } from "./components/TopBar";
 import { CaptureScreen } from "./screens/CaptureScreen";
 import { DiscoverScreen } from "./screens/DiscoverScreen";
 import { MicTest } from "./screens/MicTest";
 import { ProfileScreen } from "./screens/ProfileScreen";
-import { fetchFeed, fetchTodayStatus, type Post } from "./lib/api";
+import type { Post } from "./lib/api";
 
 const IS_MIC_TEST =
   typeof window !== "undefined" &&
@@ -20,31 +20,10 @@ export default function App() {
 
 function MainApp() {
   const [tab, setTab] = useState<Tab>("discover");
-  const [hasPostedToday, setHasPostedToday] = useState(false);
-  const [todaysPost, setTodaysPost] = useState<Post | null>(null);
-
-  useEffect(() => {
-    fetchTodayStatus()
-      .then((s) => setHasPostedToday(s.hasPostedToday))
-      .catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    if (!hasPostedToday || todaysPost) return;
-    fetchFeed({ mine: true, limit: 1 })
-      .then((res) => {
-        const today = new Date().toISOString().slice(0, 10);
-        const found = res.posts.find(
-          (p) => p.created_at.slice(0, 10) === today,
-        );
-        if (found) setTodaysPost(found);
-      })
-      .catch(() => undefined);
-  }, [hasPostedToday, todaysPost]);
+  const [lastPost, setLastPost] = useState<Post | null>(null);
 
   const handlePosted = useCallback((post: Post) => {
-    setHasPostedToday(true);
-    setTodaysPost(post);
+    setLastPost(post);
   }, []);
 
   const rightSlot =
@@ -109,18 +88,11 @@ function MainApp() {
           >
             {tab === "capture" ? (
               <CaptureScreen
-                hasPostedToday={hasPostedToday}
-                todaysPost={todaysPost}
+                todaysPost={lastPost}
                 onPosted={handlePosted}
               />
             ) : tab === "discover" ? (
-              <div className="absolute inset-0 flex h-full flex-col pb-24">
-                <DiscoverScreen
-                  hasPostedToday={hasPostedToday}
-                  todaysPost={todaysPost}
-                  onPosted={handlePosted}
-                />
-              </div>
+              <DiscoverScreen todaysPost={lastPost} />
             ) : (
               <ProfileScreen />
             )}

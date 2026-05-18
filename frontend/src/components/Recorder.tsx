@@ -12,7 +12,6 @@ const TICK_MS = 100;
 type Phase = "idle" | "recording" | "uploading" | "done" | "error";
 
 interface Props {
-  hasPostedToday: boolean;
   todaysPost: Post | null;
   onPosted: (post: Post) => void;
 }
@@ -53,7 +52,7 @@ async function computeRms(blob: Blob): Promise<number | undefined> {
   }
 }
 
-export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
+export function Recorder({ todaysPost, onPosted }: Props) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +84,7 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
 
   useEffect(() => cleanup, [cleanup]);
 
-  const locked = hasPostedToday || phase === "done";
+  const isBusy = phase === "recording" || phase === "uploading";
 
   const finalize = useCallback(
     async (blob: Blob) => {
@@ -130,10 +129,10 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
         onPosted(post);
       } catch (err) {
         console.error("[voice] finalize ✖ failed", err);
-        let message = "Couldn't upload. Try again.";
-        if (err instanceof ApiError && err.code === "already_posted_today") {
-          message = "You've already shared today.";
-        }
+        const message =
+          err instanceof ApiError && err.code === "upload_timeout"
+            ? "Upload timed out. Try again."
+            : "Couldn't upload. Try again.";
         setError(message);
         setPhase("error");
       }
@@ -142,7 +141,7 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
   );
 
   const start = useCallback(async () => {
-    if (locked) return;
+    if (isBusy) return;
     setError(null);
     try {
       console.info("[voice] requesting microphone…");
@@ -202,7 +201,7 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
       setPhase("error");
       cleanup();
     }
-  }, [cleanup, finalize, locked]);
+  }, [cleanup, finalize, isBusy]);
 
   const stop = useCallback(() => {
     if (recorderRef.current && recorderRef.current.state === "recording") {
@@ -215,14 +214,13 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
 
   let buttonLabel = "Start Recording";
   let buttonDisabled = false;
-  if (locked) {
-    buttonLabel = "Shared Today";
-    buttonDisabled = true;
-  } else if (phase === "recording") {
+  if (phase === "recording") {
     buttonLabel = "Stop Recording";
   } else if (phase === "uploading") {
     buttonLabel = "Listening…";
     buttonDisabled = true;
+  } else if (phase === "done") {
+    buttonLabel = "Record Again";
   } else if (phase === "error" && error) {
     buttonLabel = "Try Again";
   }
@@ -239,15 +237,17 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
 
   const remainingFrac = Math.max(0, (MAX_MS - elapsed) / MAX_MS);
 
-  const displayEmoji = todaysPost?.emoji ?? "🎙️";
+  const showLastPost = phase !== "recording" && phase !== "uploading";
+  const displayEmoji = showLastPost ? (todaysPost?.emoji ?? "🎙️") : "🎙️";
   const displayDescription =
-    todaysPost?.description ??
-    (phase === "recording"
+    phase === "recording"
       ? "Ten seconds of where you are"
       : phase === "uploading"
         ? "Reading the room…"
-        : error ??
-          "Hold a quiet moment. Share where you are.");
+        : phase === "error" && error
+          ? error
+          : (todaysPost?.description ??
+            "Hold a quiet moment. Share where you are.");
 
   return (
     <div className="flex w-full flex-col items-stretch gap-4 rounded-2xl border border-line-200 bg-ink-100/70 p-6 backdrop-blur">
@@ -263,9 +263,9 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
           <p className="line-clamp-2 text-sm leading-snug text-mist-300">
             {displayDescription}
           </p>
-          {todaysPost ? (
+          {todaysPost && showLastPost ? (
             <p className="mt-1 text-[10px] tracking-[var(--tracking-chrome)] text-mist-100 uppercase">
-              {todaysPost.category.replace("_", " ")} · today
+              {todaysPost.category.replace("_", " ")} · last capture
             </p>
           ) : null}
         </div>
