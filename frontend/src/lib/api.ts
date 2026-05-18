@@ -94,7 +94,8 @@ export async function uploadPost(
   opts: UploadOptions,
 ): Promise<{ post: Post }> {
   const form = new FormData();
-  form.append("audio", blob, "clip.webm");
+  const filename = blob.type === "audio/wav" ? "clip.wav" : "clip.webm";
+  form.append("audio", blob, filename);
   form.append("durationMs", String(opts.durationMs));
   if (opts.rms !== undefined) form.append("rms", String(opts.rms));
   if (opts.latitude !== undefined)

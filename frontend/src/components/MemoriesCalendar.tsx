@@ -66,11 +66,12 @@ export function MemoriesCalendar({
           onClick={onPrev}
           disabled={!hasPrev}
           style={{ opacity: hasPrev ? 1 : 0.2 }}
-          className="px-3 py-2 text-2xl text-mist-300"
+          className="text-2xl text-mist-300 px-3 py-2"
         >
           ←
         </button>
-        <span className="text-xs tracking-[var(--tracking-chrome)] text-mist-200 uppercase">
+
+        <span className="text-xs uppercase tracking-[var(--tracking-chrome)] text-mist-200">
           {MONTHS[monthIndex]} {year}
         </span>
         <button
@@ -78,7 +79,7 @@ export function MemoriesCalendar({
           onClick={onNext}
           disabled={!hasNext}
           style={{ opacity: hasNext ? 1 : 0.2 }}
-          className="px-3 py-2 text-2xl text-mist-300"
+          className="text-2xl text-mist-300 px-3 py-2"
         >
           →
         </button>

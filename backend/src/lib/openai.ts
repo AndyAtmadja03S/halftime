@@ -1,5 +1,4 @@
 import OpenAI from "openai";
-import { toFile } from "openai/uploads";
 import { z } from "zod";
 import { env } from "./env.js";
 import { createLogger } from "./log.js";
@@ -29,56 +28,38 @@ export const tagSchema = z.object({
 
 export type SoundTag = z.infer<typeof tagSchema>;
 
-export async function transcribe(
-  buffer: Buffer,
-  filename = "audio.webm",
-): Promise<string> {
-  log.info("whisper.transcribe → request", {
-    bytes: buffer.byteLength,
-    filename,
-  });
-  const file = await toFile(buffer, filename, { type: "audio/webm" });
-  const t0 = Date.now();
-  try {
-    const result = await client.audio.transcriptions.create({
-      file,
-      model: "whisper-1",
-      response_format: "text",
-      temperature: 0,
-    });
-    const text = typeof result === "string" ? result.trim() : "";
-    log.info("whisper.transcribe ← done", {
-      ms: Date.now() - t0,
-      chars: text.length,
-      preview: text.slice(0, 80),
-    });
-    return text;
-  } catch (err) {
-    log.warn("whisper.transcribe ✖ failed (continuing with empty transcript)", {
-      ms: Date.now() - t0,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return "";
-  }
+const CATEGORY_FALLBACK_EMOJI: Record<Category, string> = {
+  rain: "🌧️",
+  cafe: "☕",
+  commute: "🚇",
+  city_night: "🌃",
+  nature: "🌿",
+  ocean: "🌊",
+  quiet: "💤",
+  crowd: "🔥",
+  other: "🌫️",
+};
+
+const EMOJI_RE = /\p{Extended_Pictographic}/u;
+
+function sanitizeEmoji(raw: string, category: Category): string {
+  return EMOJI_RE.test(raw) ? raw : CATEGORY_FALLBACK_EMOJI[category];
 }
 
 interface TagInput {
-  transcript: string;
+  audio: Buffer;
   durationMs: number;
   rms?: number;
 }
 
 const SYSTEM_PROMPT = `You label a 10-second ambient sound clip uploaded by a stranger to a calm, low-pressure social app called "Lost & Found Frequencies".
 
-You receive:
-- A short Whisper transcript (may be empty or fragmentary - the clip is ambient, not speech).
-- Duration in milliseconds.
-- Optional loudness (RMS, 0-1).
+You will be given a short audio clip. LISTEN to it carefully and identify what is actually happening in the environment — rain, café chatter, a train, traffic, birds, the ocean, an empty room, a crowd, etc. Use what you hear, not assumptions.
 
-You must return strict JSON with three fields:
-- emoji: ONE single emoji that captures the atmosphere. Prefer ambient ones (rain, coffee, train, city, leaves, wave, moon, fire, sparkle, wind).
+Return strict JSON with three fields:
+- emoji: ONE single emoji CHARACTER (a Unicode pictograph like 🌧️ ☕ 🚇 🌃 🌿 🌊 💤 🔥). NEVER return a word, label, or description in this field — only an actual emoji glyph.
 - category: one of: rain, cafe, commute, city_night, nature, ocean, quiet, crowd, other.
-- description: a poetic, cinematic line UNDER 10 WORDS. No quotes. No period at the end is optional. Avoid "you" and "I". Avoid clichés. Feel like a film subtitle, not a caption.
+- description: a poetic, cinematic line UNDER 10 WORDS. No quotes. Avoid "you" and "I". Avoid clichés. Feel like a film subtitle, not a caption.
 
 Examples of good descriptions:
 - Late-night train ride home
@@ -88,18 +69,33 @@ Examples of good descriptions:
 - Morning birds before sunrise
 - Ocean breathing against the shore
 
-If the transcript is empty, infer from duration and loudness. Default to "quiet" / "soft stillness in the room" rather than guessing wildly.`;
+Match the description to what you actually hear. Vary your output — do not default to a generic line.`;
 
 export async function tagSound(input: TagInput): Promise<SoundTag> {
-  const userPayload = {
-    transcript: input.transcript || "(no speech detected)",
-    duration_ms: input.durationMs,
-    rms: input.rms,
-  };
-  log.info("gpt.tagSound → request", {
-    durationMs: input.durationMs,
-    rms: input.rms,
-    transcriptChars: input.transcript.length,
+  const base64 = input.audio.toString("base64");
+
+  const completion = await client.chat.completions.create({
+    model: "gpt-4o-mini-audio-preview",
+    modalities: ["text"],
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_audio",
+            input_audio: { data: base64, format: "wav" },
+          },
+          {
+            type: "text",
+            text: `Duration: ${input.durationMs}ms. Loudness (RMS 0-1): ${
+              input.rms?.toFixed(3) ?? "unknown"
+            }. Listen and return strict JSON.`,
+          },
+        ],
+      },
+    ],
   });
 
   const t0 = Date.now();
@@ -129,11 +125,10 @@ export async function tagSound(input: TagInput): Promise<SoundTag> {
   const raw = completion.choices[0]?.message?.content ?? "{}";
   const parsed = tagSchema.safeParse(JSON.parse(raw));
   if (parsed.success) {
-    log.info("gpt.tagSound ← done", {
-      ms: Date.now() - t0,
-      tag: parsed.data,
-    });
-    return parsed.data;
+    return {
+      ...parsed.data,
+      emoji: sanitizeEmoji(parsed.data.emoji, parsed.data.category),
+    };
   }
 
   log.warn("gpt.tagSound returned invalid JSON, falling back", {

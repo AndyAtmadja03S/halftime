@@ -28,15 +28,11 @@ export function LiveWaveform({ stream, bars = 28 }: Props) {
       els.push(el);
     }
 
+    const REST_HEIGHT = 8;
+
     if (!stream) {
-      const t = window.setInterval(() => {
-        for (const el of els) {
-          const v = 10 + Math.random() * 30;
-          el.style.height = `${v}%`;
-        }
-      }, 220);
+      for (const el of els) el.style.height = `${REST_HEIGHT}%`;
       return () => {
-        window.clearInterval(t);
         container.innerHTML = "";
       };
     }
@@ -49,18 +45,28 @@ export function LiveWaveform({ stream, bars = 28 }: Props) {
     const src = ctx.createMediaStreamSource(stream);
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.6;
     src.connect(analyser);
     const data = new Uint8Array(analyser.frequencyBinCount);
+    const SILENCE_THRESHOLD = 8;
 
     const draw = () => {
       analyser.getByteFrequencyData(data);
-      const step = Math.floor(data.length / bars) || 1;
-      for (let i = 0; i < bars; i++) {
-        let sum = 0;
-        for (let j = 0; j < step; j++) sum += data[i * step + j] ?? 0;
-        const v = sum / step / 255;
-        const h = Math.max(6, Math.min(100, v * 130));
-        els[i].style.height = `${h}%`;
+      let total = 0;
+      for (let i = 0; i < data.length; i++) total += data[i];
+      const avg = total / data.length;
+
+      if (avg < SILENCE_THRESHOLD) {
+        for (let i = 0; i < bars; i++) els[i].style.height = `${REST_HEIGHT}%`;
+      } else {
+        const step = Math.floor(data.length / bars) || 1;
+        for (let i = 0; i < bars; i++) {
+          let sum = 0;
+          for (let j = 0; j < step; j++) sum += data[i * step + j] ?? 0;
+          const v = sum / step / 255;
+          const h = Math.max(REST_HEIGHT, Math.min(100, v * 130));
+          els[i].style.height = `${h}%`;
+        }
       }
       rafRef.current = requestAnimationFrame(draw);
     };
