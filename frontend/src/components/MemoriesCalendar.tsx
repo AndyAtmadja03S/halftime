@@ -8,7 +8,9 @@ interface Props {
   monthIndex: number;
   days: DayEntry[];
   onPrev: () => void;
+  onNext: () => void;
   hasPrev: boolean;
+  hasNext: boolean;
 }
 
 const MONTHS = [
@@ -39,37 +41,75 @@ export function MemoriesCalendar({
   monthIndex,
   days,
   onPrev,
+  onNext,
   hasPrev,
+  hasNext,
 }: Props) {
   const byDate = useMemo(() => {
     const map = new Map<string, DayEntry>();
-    for (const d of days) map.set(d.date, d);
+
+    for (const d of days) {
+      map.set(d.date, d);
+    }
+
     return map;
   }, [days]);
 
   const total = daysInMonth(year, monthIndex);
+
   const now = new Date();
+
   const isCurrentMonth =
-    now.getUTCFullYear() === year && now.getUTCMonth() === monthIndex;
+    now.getUTCFullYear() === year &&
+    now.getUTCMonth() === monthIndex;
+
   const lastDay = isCurrentMonth ? now.getUTCDate() : total;
 
   const cells = [];
-  for (let day = lastDay; day >= 1; day--) {
+
+  for (let day = 1; day <= lastDay; day++) {
     const iso = `${year}-${pad(monthIndex + 1)}-${pad(day)}`;
     const entry = byDate.get(iso);
-    cells.push({ day, iso, entry });
+
+    cells.push({
+      day,
+      iso,
+      entry,
+    });
   }
 
   return (
     <section className="flex flex-col gap-4">
-      <p className="text-center text-xs tracking-[var(--tracking-chrome)] text-mist-200 uppercase">
-        {MONTHS[monthIndex]} {year}
-      </p>
+      <div className="flex items-center justify-between px-4">
+        <button
+          type="button"
+          onClick={onPrev}
+          disabled={!hasPrev}
+          style={{ opacity: hasPrev ? 1 : 0.2 }}
+          className="text-2xl text-mist-300 px-3 py-2"
+        >
+          ←
+        </button>
+
+        <span className="text-xs uppercase tracking-[var(--tracking-chrome)] text-mist-200">
+          {MONTHS[monthIndex]} {year}
+        </span>
+
+        <button
+          type="button"
+          onClick={onNext}
+          disabled={!hasNext}
+          style={{ opacity: hasNext ? 1 : 0.2 }}
+          className="text-2xl text-mist-300 px-3 py-2"
+        >
+          →
+        </button>
+      </div>
 
       <motion.div
         layout
-        className="grid grid-cols-4 gap-3"
         initial={false}
+        className="grid grid-cols-4 gap-3"
       >
         {cells.map(({ day, iso, entry }) => (
           <motion.div
@@ -82,21 +122,22 @@ export function MemoriesCalendar({
               "relative aspect-square rounded-xl border",
               entry
                 ? "border-line-200 bg-ink-200"
-                : "border-line-100 bg-transparent",
+                : "border-line-100 bg-transparent"
             )}
           >
             {entry ? (
               <span
-                className="absolute inset-0 grid place-items-center text-3xl leading-none"
                 aria-hidden
+                className="absolute inset-0 grid place-items-center text-3xl leading-none"
               >
                 {entry.emoji}
               </span>
             ) : null}
+
             <span
               className={clsx(
                 "absolute bottom-1.5 left-0 right-0 text-center text-[10px] tracking-[0.12em]",
-                entry ? "text-mist-200" : "text-mist-100",
+                entry ? "text-mist-200" : "text-mist-100"
               )}
             >
               {pad(day)}
@@ -104,16 +145,6 @@ export function MemoriesCalendar({
           </motion.div>
         ))}
       </motion.div>
-
-      {hasPrev ? (
-        <button
-          type="button"
-          onClick={onPrev}
-          className="mx-auto mt-2 text-xs tracking-[var(--tracking-chrome)] text-mist-200 uppercase underline-offset-4 hover:underline"
-        >
-          Previous Month
-        </button>
-      ) : null}
     </section>
   );
 }

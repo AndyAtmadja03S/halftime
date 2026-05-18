@@ -17,9 +17,7 @@ function formatMonthShort(iso: string | null): string {
 export function ProfileScreen() {
   const [stats, setStats] = useState<MeStats | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<{ year: number; monthIndex: number } | null>(
-    null,
-  );
+  const [view, setView] = useState<{ year: number; monthIndex: number } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -28,32 +26,28 @@ export function ProfileScreen() {
         if (!alive) return;
         setStats(s);
         const now = new Date();
-        setView({
-          year: now.getUTCFullYear(),
-          monthIndex: now.getUTCMonth(),
-        });
+        setView({ year: now.getUTCFullYear(), monthIndex: now.getUTCMonth() });
       })
       .catch(() => {
         if (alive) setError("Could not load your memories.");
       });
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, []);
 
-  const firstDate = useMemo(() => {
-    if (!stats?.firstActive) return null;
-    return new Date(stats.firstActive);
-  }, [stats]);
-
   const hasPrev = useMemo(() => {
-    if (!view || !firstDate) return false;
-    const viewStart = new Date(Date.UTC(view.year, view.monthIndex, 1));
-    const firstMonth = new Date(
-      Date.UTC(firstDate.getUTCFullYear(), firstDate.getUTCMonth(), 1),
-    );
-    return viewStart > firstMonth;
-  }, [view, firstDate]);
+    if (!view) return false;
+    const now = new Date();
+    const earliest = monthOffset(now.getUTCFullYear(), now.getUTCMonth(), -12);
+    const earliestDate = new Date(Date.UTC(earliest.year, earliest.monthIndex, 1));
+    const viewDate = new Date(Date.UTC(view.year, view.monthIndex, 1));
+    return viewDate > earliestDate;
+  }, [view]);
+
+  const hasNext = useMemo(() => {
+    if (!view) return false;
+    const now = new Date();
+    return view.year < now.getUTCFullYear() || (view.year === now.getUTCFullYear() && view.monthIndex < now.getUTCMonth());
+  }, [view]);
 
   if (!stats || !view) {
     return (
@@ -106,7 +100,9 @@ export function ProfileScreen() {
         monthIndex={view.monthIndex}
         days={stats.days}
         hasPrev={hasPrev}
+        hasNext={hasNext}
         onPrev={() => setView(monthOffset(view.year, view.monthIndex, -1))}
+        onNext={() => setView(monthOffset(view.year, view.monthIndex, +1))}
       />
     </div>
   );
