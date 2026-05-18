@@ -4,8 +4,7 @@ import multer from "multer";
 import { z } from "zod";
 import { createLogger } from "../lib/log.js";
 import { BUCKET, supabase } from "../lib/supabase.js";
-import { tagSound, transcribe } from "../lib/openai.js";
-import { requireDailyWindow } from "../middleware/dailyWindow.js";
+import { tagSound } from "../lib/openai.js";
 import { requireDeviceId } from "../middleware/deviceId.js";
 
 const log = createLogger("posts");
@@ -30,7 +29,6 @@ export const postsRouter = Router();
 postsRouter.post(
   "/",
   requireDeviceId,
-  requireDailyWindow,
   upload.single("audio"),
   async (req, res, next) => {
     const reqId = randomUUID().slice(0, 8);
@@ -87,7 +85,7 @@ postsRouter.post(
       }
 
       const buffer = req.file.buffer;
-      const objectPath = `${deviceId}/${randomUUID()}.webm`;
+      const objectPath = `${deviceId}/${randomUUID()}.wav`;
 
       rlog.info("storage.upload → start", {
         path: objectPath,
@@ -97,7 +95,7 @@ postsRouter.post(
       const { error: uploadErr } = await supabase.storage
         .from(BUCKET)
         .upload(objectPath, buffer, {
-          contentType: req.file.mimetype || "audio/webm",
+          contentType: req.file.mimetype || "audio/wav",
           upsert: false,
         });
       if (uploadErr) {
@@ -106,9 +104,8 @@ postsRouter.post(
       }
       rlog.info("storage.upload ← done", { ms: Date.now() - uploadT0 });
 
-      const transcript = await transcribe(buffer);
       const tag = await tagSound({
-        transcript,
+        audio: buffer,
         durationMs: parsed.data.durationMs,
         rms: parsed.data.rms,
       });
@@ -124,7 +121,7 @@ postsRouter.post(
           emoji: tag.emoji,
           category: tag.category,
           description: tag.description,
-          transcript: transcript || null,
+          transcript: null,
           latitude: parsed.data.latitude ?? null,
           longitude: parsed.data.longitude ?? null,
         })

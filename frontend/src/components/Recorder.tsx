@@ -2,14 +2,12 @@ import clsx from "clsx";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, type Post, uploadPost } from "../lib/api";
-import { getDeviceHour } from "../lib/deviceId";
 import { getCoordsOnce } from "../lib/geolocation";
+import { blobToWav } from "../lib/wav";
 import { LiveWaveform } from "./LiveWaveform";
 
 const MAX_MS = 10_000;
 const TICK_MS = 100;
-const START_HOUR = 9;
-const END_HOUR = 21;
 
 type Phase = "idle" | "recording" | "uploading" | "done" | "error";
 
@@ -59,7 +57,6 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [hour, setHour] = useState(getDeviceHour());
   const [stream, setStream] = useState<MediaStream | null>(null);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -68,11 +65,6 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
   const startedAtRef = useRef<number>(0);
   const tickRef = useRef<number | null>(null);
   const stopTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    const id = window.setInterval(() => setHour(getDeviceHour()), 60_000);
-    return () => window.clearInterval(id);
-  }, []);
 
   const cleanup = useCallback(() => {
     if (tickRef.current !== null) {
@@ -93,7 +85,6 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
 
   useEffect(() => cleanup, [cleanup]);
 
-  const inWindow = hour >= START_HOUR && hour < END_HOUR;
   const locked = hasPostedToday || phase === "done";
 
   const finalize = useCallback(
@@ -101,20 +92,12 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
       setPhase("uploading");
       try {
         const durationMs = Math.min(MAX_MS, Date.now() - startedAtRef.current);
-        console.info("[voice] finalize → blob ready", {
-          bytes: blob.size,
-          mime: blob.type,
-          durationMs,
-        });
-        const [rms, coords] = await Promise.all([
+        const [rms, coords, wavBlob] = await Promise.all([
           computeRms(blob),
           getCoordsOnce(),
+          blobToWav(blob),
         ]);
-        console.info("[voice] finalize ← metadata", {
-          rms,
-          coords: coords ? "granted" : "denied/none",
-        });
-        const { post } = await uploadPost(blob, {
+        const { post } = await uploadPost(wavBlob, {
           durationMs,
           rms,
           latitude: coords?.latitude,
@@ -129,15 +112,11 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
         setPhase("done");
         onPosted(post);
       } catch (err) {
-        console.error("[voice] finalize ✖ failed", err);
-        const message =
-          err instanceof ApiError
-            ? err.code === "outside_window"
-              ? "Outside the 9pm window."
-              : err.code === "already_posted_today"
-                ? "You've already shared today."
-                : "Couldn't upload. Try again."
-            : "Couldn't upload. Try again.";
+        console.log(err);
+        let message = "Couldn't upload. Try again.";
+        if (err instanceof ApiError && err.code === "already_posted_today") {
+          message = "You've already shared today.";
+        }
         setError(message);
         setPhase("error");
       }
@@ -146,10 +125,7 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
   );
 
   const start = useCallback(async () => {
-    if (locked || !inWindow) {
-      console.warn("[voice] start blocked", { locked, inWindow });
-      return;
-    }
+    if (locked) return;
     setError(null);
     try {
       console.info("[voice] requesting microphone…");
@@ -209,7 +185,7 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
       setPhase("error");
       cleanup();
     }
-  }, [cleanup, finalize, inWindow, locked]);
+  }, [cleanup, finalize, locked]);
 
   const stop = useCallback(() => {
     if (recorderRef.current && recorderRef.current.state === "recording") {
@@ -220,22 +196,31 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
 
   const remainingS = Math.max(0, Math.ceil((MAX_MS - elapsed) / 1000));
 
-  let buttonLabel = "Capture";
+  let buttonLabel = "Start Recording";
   let buttonDisabled = false;
-  if (!inWindow) {
-    buttonLabel = "Quiet Hours";
-    buttonDisabled = true;
-  } else if (locked) {
+  if (locked) {
     buttonLabel = "Shared Today";
     buttonDisabled = true;
   } else if (phase === "recording") {
-    buttonLabel = `Stop · ${remainingS}s`;
+    buttonLabel = "Stop Recording";
   } else if (phase === "uploading") {
     buttonLabel = "Listening…";
     buttonDisabled = true;
   } else if (phase === "error" && error) {
     buttonLabel = "Try Again";
   }
+
+  let buttonClasses: string;
+  if (buttonDisabled) {
+    buttonClasses = "border-line-100 bg-ink-200 text-mist-100";
+  } else if (phase === "recording") {
+    buttonClasses = "border-mist-500 bg-mist-500/10 text-mist-500";
+  } else {
+    buttonClasses = "border-mist-500 bg-mist-500 hover:bg-mist-400";
+  }
+  const isPrimaryStart = !buttonDisabled && phase !== "recording";
+
+  const remainingFrac = Math.max(0, (MAX_MS - elapsed) / MAX_MS);
 
   const displayEmoji = todaysPost?.emoji ?? "🎙️";
   const displayDescription =
@@ -273,16 +258,30 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
         <LiveWaveform stream={phase === "recording" ? stream : null} />
       </div>
 
+      {phase === "recording" ? (
+        <div className="px-1">
+          <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-black-200">
+            <motion.div
+              className="absolute inset-y-0 left-0 bg-mist-500"
+              initial={false}
+              animate={{ width: `${remainingFrac * 100}%` }}
+              transition={{ duration: 0.1, ease: "linear" }}
+            />
+          </div>
+          <p className="mt-1 text-right text-[10px] tracking-[var(--tracking-chrome)] text-mist-300 uppercase">
+            {remainingS}s
+          </p>
+        </div>
+      ) : null}
+
       <button
         type="button"
         onClick={phase === "recording" ? stop : start}
         disabled={buttonDisabled}
+        style={isPrimaryStart ? { color: "var(--color-ink-300)" } : undefined}
         className={clsx(
-          "relative grid place-items-center rounded-lg border px-5 py-3 text-xs tracking-[var(--tracking-chrome)] uppercase transition",
-          buttonDisabled
-            ? "border-line-100 text-mist-100"
-            : "border-mist-300 text-mist-500 hover:bg-white/[0.04]",
-          phase === "recording" && "border-mist-500 text-mist-500",
+          "relative grid place-items-center rounded-lg border px-5 py-3 text-sm font-medium tracking-[var(--tracking-chrome)] uppercase transition",
+          buttonClasses,
         )}
       >
         <AnimatePresence mode="wait">
@@ -296,15 +295,6 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
             {buttonLabel}
           </motion.span>
         </AnimatePresence>
-        {phase === "recording" ? (
-          <motion.span
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-mist-500"
-            initial={false}
-            animate={{ scaleX: elapsed / MAX_MS }}
-            style={{ transformOrigin: "left" }}
-            transition={{ duration: 0.1, ease: "linear" }}
-          />
-        ) : null}
       </button>
     </div>
   );
