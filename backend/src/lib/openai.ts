@@ -2,7 +2,9 @@ import OpenAI from "openai";
 import { toFile } from "openai/uploads";
 import { z } from "zod";
 import { env } from "./env.js";
+import { createLogger } from "./log.js";
 
+const log = createLogger("openai");
 const client = new OpenAI({ apiKey: env.openaiApiKey });
 
 export const CATEGORIES = [
@@ -31,7 +33,12 @@ export async function transcribe(
   buffer: Buffer,
   filename = "audio.webm",
 ): Promise<string> {
+  log.info("whisper.transcribe → request", {
+    bytes: buffer.byteLength,
+    filename,
+  });
   const file = await toFile(buffer, filename, { type: "audio/webm" });
+  const t0 = Date.now();
   try {
     const result = await client.audio.transcriptions.create({
       file,
@@ -39,8 +46,18 @@ export async function transcribe(
       response_format: "text",
       temperature: 0,
     });
-    return typeof result === "string" ? result.trim() : "";
-  } catch {
+    const text = typeof result === "string" ? result.trim() : "";
+    log.info("whisper.transcribe ← done", {
+      ms: Date.now() - t0,
+      chars: text.length,
+      preview: text.slice(0, 80),
+    });
+    return text;
+  } catch (err) {
+    log.warn("whisper.transcribe ✖ failed (continuing with empty transcript)", {
+      ms: Date.now() - t0,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return "";
   }
 }
@@ -79,21 +96,50 @@ export async function tagSound(input: TagInput): Promise<SoundTag> {
     duration_ms: input.durationMs,
     rms: input.rms,
   };
-
-  const completion = await client.chat.completions.create({
-    model: "gpt-4o-mini",
-    temperature: 0.8,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: JSON.stringify(userPayload) },
-    ],
+  log.info("gpt.tagSound → request", {
+    durationMs: input.durationMs,
+    rms: input.rms,
+    transcriptChars: input.transcript.length,
   });
+
+  const t0 = Date.now();
+  let completion;
+  try {
+    completion = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.8,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: JSON.stringify(userPayload) },
+      ],
+    });
+  } catch (err) {
+    log.error("gpt.tagSound ✖ failed", {
+      ms: Date.now() - t0,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return {
+      emoji: "🌫️",
+      category: "quiet",
+      description: "A soft moment between things",
+    };
+  }
 
   const raw = completion.choices[0]?.message?.content ?? "{}";
   const parsed = tagSchema.safeParse(JSON.parse(raw));
-  if (parsed.success) return parsed.data;
+  if (parsed.success) {
+    log.info("gpt.tagSound ← done", {
+      ms: Date.now() - t0,
+      tag: parsed.data,
+    });
+    return parsed.data;
+  }
 
+  log.warn("gpt.tagSound returned invalid JSON, falling back", {
+    ms: Date.now() - t0,
+    raw: raw.slice(0, 200),
+  });
   return {
     emoji: "🌫️",
     category: "quiet",

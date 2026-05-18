@@ -101,11 +101,22 @@ export async function uploadPost(
     form.append("latitude", String(opts.latitude));
   if (opts.longitude !== undefined)
     form.append("longitude", String(opts.longitude));
+
+  console.info("[voice] upload → start", {
+    bytes: blob.size,
+    mime: blob.type,
+    durationMs: opts.durationMs,
+    rms: opts.rms,
+    hasLocation: opts.latitude !== undefined && opts.longitude !== undefined,
+  });
+  const t0 = performance.now();
   const res = await fetch(`/api/posts`, {
     method: "POST",
     headers: deviceHeaders(),
     body: form,
   });
+  const ms = Math.round(performance.now() - t0);
+  console.info(`[voice] upload ← ${res.status} in ${ms}ms`);
   return handle(res);
 }
 

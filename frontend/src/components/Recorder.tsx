@@ -101,19 +101,35 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
       setPhase("uploading");
       try {
         const durationMs = Math.min(MAX_MS, Date.now() - startedAtRef.current);
+        console.info("[voice] finalize → blob ready", {
+          bytes: blob.size,
+          mime: blob.type,
+          durationMs,
+        });
         const [rms, coords] = await Promise.all([
           computeRms(blob),
           getCoordsOnce(),
         ]);
+        console.info("[voice] finalize ← metadata", {
+          rms,
+          coords: coords ? "granted" : "denied/none",
+        });
         const { post } = await uploadPost(blob, {
           durationMs,
           rms,
           latitude: coords?.latitude,
           longitude: coords?.longitude,
         });
+        console.info("[voice] post created", {
+          id: post.id,
+          emoji: post.emoji,
+          category: post.category,
+          description: post.description,
+        });
         setPhase("done");
         onPosted(post);
       } catch (err) {
+        console.error("[voice] finalize ✖ failed", err);
         const message =
           err instanceof ApiError
             ? err.code === "outside_window"
@@ -130,22 +146,43 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
   );
 
   const start = useCallback(async () => {
-    if (locked || !inWindow) return;
+    if (locked || !inWindow) {
+      console.warn("[voice] start blocked", { locked, inWindow });
+      return;
+    }
     setError(null);
     try {
+      console.info("[voice] requesting microphone…");
       const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const track = s.getAudioTracks()[0];
+      console.info("[voice] mic granted", {
+        label: track?.label,
+        settings: track?.getSettings?.(),
+      });
       streamRef.current = s;
       setStream(s);
       const mimeType = pickMimeType();
+      console.info("[voice] MediaRecorder mime", { mimeType: mimeType || "(default)" });
       const rec = new MediaRecorder(s, mimeType ? { mimeType } : undefined);
       recorderRef.current = rec;
       chunksRef.current = [];
       rec.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
+        if (e.data.size > 0) {
+          chunksRef.current.push(e.data);
+          console.debug("[voice] chunk", { bytes: e.data.size });
+        }
+      };
+      rec.onerror = (e) => {
+        console.error("[voice] MediaRecorder error", e);
       };
       rec.onstop = () => {
         const blob = new Blob(chunksRef.current, {
           type: rec.mimeType || "audio/webm",
+        });
+        console.info("[voice] recording stopped", {
+          chunks: chunksRef.current.length,
+          totalBytes: blob.size,
+          elapsedMs: Date.now() - startedAtRef.current,
         });
         cleanup();
         void finalize(blob);
@@ -154,6 +191,7 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
       setElapsed(0);
       setPhase("recording");
       rec.start();
+      console.info("[voice] recording started");
 
       tickRef.current = window.setInterval(() => {
         setElapsed(Math.min(MAX_MS, Date.now() - startedAtRef.current));
@@ -161,10 +199,12 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
 
       stopTimerRef.current = window.setTimeout(() => {
         if (recorderRef.current && recorderRef.current.state === "recording") {
+          console.info("[voice] auto-stop at 10s cap");
           recorderRef.current.stop();
         }
       }, MAX_MS);
-    } catch {
+    } catch (err) {
+      console.error("[voice] mic denied or failed", err);
       setError("Microphone access denied.");
       setPhase("error");
       cleanup();
@@ -173,6 +213,7 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
 
   const stop = useCallback(() => {
     if (recorderRef.current && recorderRef.current.state === "recording") {
+      console.info("[voice] user stop");
       recorderRef.current.stop();
     }
   }, []);

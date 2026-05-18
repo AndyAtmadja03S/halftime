@@ -4,10 +4,21 @@ import { TabBar, type Tab } from "./components/TabBar";
 import { TopBar } from "./components/TopBar";
 import { CaptureScreen } from "./screens/CaptureScreen";
 import { DiscoverScreen } from "./screens/DiscoverScreen";
+import { MicTest } from "./screens/MicTest";
 import { ProfileScreen } from "./screens/ProfileScreen";
 import { fetchFeed, fetchTodayStatus, type Post } from "./lib/api";
 
+const IS_MIC_TEST =
+  typeof window !== "undefined" &&
+  (window.location.search.includes("mic-test") ||
+    window.location.pathname === "/mic-test");
+
 export default function App() {
+  if (IS_MIC_TEST) return <MicTest />;
+  return <MainApp />;
+}
+
+function MainApp() {
   const [tab, setTab] = useState<Tab>("discover");
   const [hasPostedToday, setHasPostedToday] = useState(false);
   const [todaysPost, setTodaysPost] = useState<Post | null>(null);
