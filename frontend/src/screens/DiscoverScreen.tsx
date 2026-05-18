@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchFeed, type Post } from "../lib/api";
+import { SoundDetailModal } from "../components/SoundDetailModal";
 
 interface Props {
   todaysPost: Post | null;
@@ -118,6 +119,7 @@ export function DiscoverScreen({ todaysPost }: Props) {
       }
     }
   };
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
 
   return (
     <div className="relative flex h-full flex-col bg-black font-sans text-white antialiased">
@@ -145,7 +147,8 @@ export function DiscoverScreen({ todaysPost }: Props) {
             return (
               <div
                 key={post.id}
-                className="relative flex min-h-[92px] rounded-[24px] bg-[#121212] p-4"
+                onClick={() => setSelectedPost(post)}
+                className="relative flex min-h-[92px] rounded-[24px] bg-[#121212] p-4 cursor-pointer transition-all duration-200 hover:bg-[#1a1a1a] active:scale-[0.98]"
               >
                 <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden text-[34px] leading-none select-none">
                   <span aria-hidden>{safeEmoji(post)}</span>
@@ -159,7 +162,10 @@ export function DiscoverScreen({ todaysPost }: Props) {
                   <div className="mt-[7px] flex items-center gap-3">
                     <button
                       type="button"
-                      onClick={() => handlePlaySound(post.id, post.audio_url)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePlaySound(post.id, post.audio_url);
+                      }}
                       disabled={!canPlay}
                       className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-neutral-800 text-white transition duration-150 hover:bg-neutral-700 active:scale-95 focus:outline-none disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-neutral-800"
                       aria-label={
@@ -233,6 +239,7 @@ export function DiscoverScreen({ todaysPost }: Props) {
 
                 <button
                   type="button"
+                  onClick={(e) => e.stopPropagation()}
                   className="absolute top-1/2 right-[18px] -translate-y-1/2 p-1 text-[#545456] transition-colors duration-200 hover:text-white"
                   aria-label="More options"
                 >
@@ -250,6 +257,11 @@ export function DiscoverScreen({ todaysPost }: Props) {
           })
         )}
       </div>
+      <SoundDetailModal 
+        post={selectedPost} 
+        isOpen={!!selectedPost} 
+        onClose={() => setSelectedPost(null)} 
+      />
     </div>
   );
 }

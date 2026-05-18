@@ -16,7 +16,7 @@ export function PostCard({ post }: Props) {
       initial={{ opacity: 0, y: 12, filter: "blur(6px)" }}
       animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
       transition={{ duration: 0.9, ease: [0.22, 0.61, 0.36, 1] }}
-      className="relative flex flex-col gap-4 rounded-2xl border border-white/[0.06] bg-white/[0.015] p-6 backdrop-blur-sm"
+      className="relative flex flex-col gap-4 rounded-2xl border border-white/[0.06] bg-white/[0.015] p-6 backdrop-blur-sm cursor-pointer transition-all duration-200 hover:border-white/[0.12] hover:bg-white/[0.025]"
     >
       <div
         aria-hidden
