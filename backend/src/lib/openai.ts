@@ -72,69 +72,58 @@ Examples of good descriptions:
 Match the description to what you actually hear. Vary your output — do not default to a generic line.`;
 
 export async function tagSound(input: TagInput): Promise<SoundTag> {
+  const t0 = Date.now();
   const base64 = input.audio.toString("base64");
 
-  const completion = await client.chat.completions.create({
-    model: "gpt-4o-mini-audio-preview",
-    modalities: ["text"],
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      {
-        role: "user",
-        content: [
-          {
-            type: "input_audio",
-            input_audio: { data: base64, format: "wav" },
-          },
-          {
-            type: "text",
-            text: `Duration: ${input.durationMs}ms. Loudness (RMS 0-1): ${
-              input.rms?.toFixed(3) ?? "unknown"
-            }. Listen and return strict JSON.`,
-          },
-        ],
-      },
-    ],
-  });
-
-  const t0 = Date.now();
-  let completion;
   try {
-    completion = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.8,
+    // Single completion call utilizing OpenAI's native Audio-Preview modal capabilities
+    const completion = await client.chat.completions.create({
+      model: "gpt-4o-mini-audio-preview",
+      modalities: ["text"],
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: JSON.stringify(userPayload) },
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_audio",
+              input_audio: { data: base64, format: "wav" },
+            },
+            {
+              type: "text",
+              text: `Duration: ${input.durationMs}ms. Loudness (RMS 0-1): ${
+                input.rms?.toFixed(3) ?? "unknown"
+              }. Listen and return strict JSON.`,
+            },
+          ],
+        },
       ],
     });
+
+    const raw = completion.choices[0]?.message?.content ?? "{}";
+    const parsed = tagSchema.safeParse(JSON.parse(raw));
+    
+    if (parsed.success) {
+      return {
+        ...parsed.data,
+        emoji: sanitizeEmoji(parsed.data.emoji, parsed.data.category),
+      };
+    }
+
+    log.warn("gpt.tagSound returned invalid JSON, falling back", {
+      ms: Date.now() - t0,
+      raw: raw.slice(0, 200),
+    });
+
   } catch (err) {
     log.error("gpt.tagSound ✖ failed", {
       ms: Date.now() - t0,
       error: err instanceof Error ? err.message : String(err),
     });
-    return {
-      emoji: "🌫️",
-      category: "quiet",
-      description: "A soft moment between things",
-    };
   }
 
-  const raw = completion.choices[0]?.message?.content ?? "{}";
-  const parsed = tagSchema.safeParse(JSON.parse(raw));
-  if (parsed.success) {
-    return {
-      ...parsed.data,
-      emoji: sanitizeEmoji(parsed.data.emoji, parsed.data.category),
-    };
-  }
-
-  log.warn("gpt.tagSound returned invalid JSON, falling back", {
-    ms: Date.now() - t0,
-    raw: raw.slice(0, 200),
-  });
+  // Fallback return if parsing fails or catch block fires
   return {
     emoji: "🌫️",
     category: "quiet",
