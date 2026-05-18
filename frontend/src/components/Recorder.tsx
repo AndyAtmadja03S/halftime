@@ -92,11 +92,28 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
       setPhase("uploading");
       try {
         const durationMs = Math.min(MAX_MS, Date.now() - startedAtRef.current);
-        const [rms, coords, wavBlob] = await Promise.all([
+        console.info("[voice] finalize → start", {
+          bytes: blob.size,
+          mime: blob.type,
+          durationMs,
+        });
+
+        const t1 = performance.now();
+        const wavBlob = await blobToWav(blob);
+        console.info("[voice] wav ready", {
+          bytes: wavBlob.size,
+          ms: Math.round(performance.now() - t1),
+        });
+
+        const [rms, coords] = await Promise.all([
           computeRms(blob),
           getCoordsOnce(),
-          blobToWav(blob),
         ]);
+        console.info("[voice] metadata", {
+          rms,
+          coords: coords ? "granted" : "denied/none",
+        });
+
         const { post } = await uploadPost(wavBlob, {
           durationMs,
           rms,
@@ -112,7 +129,7 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
         setPhase("done");
         onPosted(post);
       } catch (err) {
-        console.log(err);
+        console.error("[voice] finalize ✖ failed", err);
         let message = "Couldn't upload. Try again.";
         if (err instanceof ApiError && err.code === "already_posted_today") {
           message = "You've already shared today.";

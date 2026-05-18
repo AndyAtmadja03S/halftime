@@ -111,14 +111,26 @@ export async function uploadPost(
     hasLocation: opts.latitude !== undefined && opts.longitude !== undefined,
   });
   const t0 = performance.now();
-  const res = await fetch(`/api/posts`, {
-    method: "POST",
-    headers: deviceHeaders(),
-    body: form,
-  });
-  const ms = Math.round(performance.now() - t0);
-  console.info(`[voice] upload ← ${res.status} in ${ms}ms`);
-  return handle(res);
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 45_000);
+  try {
+    const res = await fetch(`/api/posts`, {
+      method: "POST",
+      headers: deviceHeaders(),
+      body: form,
+      signal: controller.signal,
+    });
+    const ms = Math.round(performance.now() - t0);
+    console.info(`[voice] upload ← ${res.status} in ${ms}ms`);
+    return handle(res);
+  } catch (err) {
+    if ((err as Error).name === "AbortError") {
+      throw new ApiError(0, "upload_timeout", "Upload timed out");
+    }
+    throw err;
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }
 
 export async function fetchStats(): Promise<MeStats> {

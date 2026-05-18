@@ -4,7 +4,11 @@ import { env } from "./env.js";
 import { createLogger } from "./log.js";
 
 const log = createLogger("openai");
-const client = new OpenAI({ apiKey: env.openaiApiKey });
+const client = new OpenAI({
+  apiKey: env.openaiApiKey,
+  timeout: 30_000,
+  maxRetries: 1,
+});
 
 export const CATEGORIES = [
   "rain",
@@ -74,40 +78,30 @@ Match the description to what you actually hear. Vary your output — do not def
 export async function tagSound(input: TagInput): Promise<SoundTag> {
   const base64 = input.audio.toString("base64");
 
-  const completion = await client.chat.completions.create({
-    model: "gpt-4o-mini-audio-preview",
-    modalities: ["text"],
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      {
-        role: "user",
-        content: [
-          {
-            type: "input_audio",
-            input_audio: { data: base64, format: "wav" },
-          },
-          {
-            type: "text",
-            text: `Duration: ${input.durationMs}ms. Loudness (RMS 0-1): ${
-              input.rms?.toFixed(3) ?? "unknown"
-            }. Listen and return strict JSON.`,
-          },
-        ],
-      },
-    ],
-  });
-
   const t0 = Date.now();
   let completion;
   try {
     completion = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.8,
+      model: "gpt-4o-mini-audio-preview",
+      modalities: ["text"],
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: JSON.stringify(userPayload) },
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_audio",
+              input_audio: { data: base64, format: "wav" },
+            },
+            {
+              type: "text",
+              text: `Duration: ${input.durationMs}ms. Loudness (RMS 0-1): ${
+                input.rms?.toFixed(3) ?? "unknown"
+              }. Listen and return strict JSON.`,
+            },
+          ],
+        },
       ],
     });
   } catch (err) {

@@ -1,4 +1,24 @@
 const TARGET_SAMPLE_RATE = 16_000;
+const DECODE_TIMEOUT_MS = 10_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = window.setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      ms,
+    );
+    p.then(
+      (v) => {
+        window.clearTimeout(t);
+        resolve(v);
+      },
+      (err) => {
+        window.clearTimeout(t);
+        reject(err);
+      },
+    );
+  });
+}
 
 export async function blobToWav(blob: Blob): Promise<Blob> {
   const AudioCtx =
@@ -6,21 +26,28 @@ export async function blobToWav(blob: Blob): Promise<Blob> {
     (window as unknown as { webkitAudioContext: typeof AudioContext })
       .webkitAudioContext;
   const ctx = new AudioCtx();
-  const arrayBuffer = await blob.arrayBuffer();
-  const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
+  try {
+    const arrayBuffer = await blob.arrayBuffer();
+    const decoded = await withTimeout(
+      ctx.decodeAudioData(arrayBuffer.slice(0)),
+      DECODE_TIMEOUT_MS,
+      "blobToWav.decodeAudioData",
+    );
 
-  const mono = new Float32Array(decoded.length);
-  for (let ch = 0; ch < decoded.numberOfChannels; ch++) {
-    const data = decoded.getChannelData(ch);
-    for (let i = 0; i < decoded.length; i++) {
-      mono[i] += data[i] / decoded.numberOfChannels;
+    const mono = new Float32Array(decoded.length);
+    for (let ch = 0; ch < decoded.numberOfChannels; ch++) {
+      const data = decoded.getChannelData(ch);
+      for (let i = 0; i < decoded.length; i++) {
+        mono[i] += data[i] / decoded.numberOfChannels;
+      }
     }
-  }
 
-  const resampled = resample(mono, decoded.sampleRate, TARGET_SAMPLE_RATE);
-  const wav = encodePcm16Wav(resampled, TARGET_SAMPLE_RATE);
-  await ctx.close();
-  return new Blob([wav], { type: "audio/wav" });
+    const resampled = resample(mono, decoded.sampleRate, TARGET_SAMPLE_RATE);
+    const wav = encodePcm16Wav(resampled, TARGET_SAMPLE_RATE);
+    return new Blob([wav], { type: "audio/wav" });
+  } finally {
+    void ctx.close().catch(() => undefined);
+  }
 }
 
 function resample(
