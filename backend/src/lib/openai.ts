@@ -28,22 +28,37 @@ export const tagSchema = z.object({
 
 export type SoundTag = z.infer<typeof tagSchema>;
 
-const CATEGORY_FALLBACK_EMOJI: Record<Category, string> = {
-  rain: "🌧️",
-  cafe: "☕",
-  commute: "🚇",
-  city_night: "🌃",
-  nature: "🌿",
-  ocean: "🌊",
-  quiet: "💤",
-  crowd: "🔥",
-  other: "🌫️",
-};
-
-const EMOJI_RE = /\p{Extended_Pictographic}/u;
-
-function sanitizeEmoji(raw: string, category: Category): string {
-  return EMOJI_RE.test(raw) ? raw : CATEGORY_FALLBACK_EMOJI[category];
+export async function transcribe(
+  buffer: Buffer,
+  filename = "audio.webm",
+): Promise<string> {
+  log.info("whisper.transcribe → request", {
+    bytes: buffer.byteLength,
+    filename,
+  });
+  const file = await toFile(buffer, filename, { type: "audio/webm" });
+  const t0 = Date.now();
+  try {
+    const result = await client.audio.transcriptions.create({
+      file,
+      model: "whisper-1",
+      response_format: "text",
+      temperature: 0,
+    });
+    const text = typeof result === "string" ? result.trim() : "";
+    log.info("whisper.transcribe ← done", {
+      ms: Date.now() - t0,
+      chars: text.length,
+      preview: text.slice(0, 80),
+    });
+    return text;
+  } catch (err) {
+    log.warn("whisper.transcribe ✖ failed (continuing with empty transcript)", {
+      ms: Date.now() - t0,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return "";
+  }
 }
 
 interface TagInput {
@@ -72,30 +87,15 @@ Examples of good descriptions:
 Match the description to what you actually hear. Vary your output — do not default to a generic line.`;
 
 export async function tagSound(input: TagInput): Promise<SoundTag> {
-  const base64 = input.audio.toString("base64");
-
-  const completion = await client.chat.completions.create({
-    model: "gpt-4o-mini-audio-preview",
-    modalities: ["text"],
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      {
-        role: "user",
-        content: [
-          {
-            type: "input_audio",
-            input_audio: { data: base64, format: "wav" },
-          },
-          {
-            type: "text",
-            text: `Duration: ${input.durationMs}ms. Loudness (RMS 0-1): ${
-              input.rms?.toFixed(3) ?? "unknown"
-            }. Listen and return strict JSON.`,
-          },
-        ],
-      },
-    ],
+  const userPayload = {
+    transcript: input.transcript || "(no speech detected)",
+    duration_ms: input.durationMs,
+    rms: input.rms,
+  };
+  log.info("gpt.tagSound → request", {
+    durationMs: input.durationMs,
+    rms: input.rms,
+    transcriptChars: input.transcript.length,
   });
 
   const t0 = Date.now();
@@ -125,10 +125,11 @@ export async function tagSound(input: TagInput): Promise<SoundTag> {
   const raw = completion.choices[0]?.message?.content ?? "{}";
   const parsed = tagSchema.safeParse(JSON.parse(raw));
   if (parsed.success) {
-    return {
-      ...parsed.data,
-      emoji: sanitizeEmoji(parsed.data.emoji, parsed.data.category),
-    };
+    log.info("gpt.tagSound ← done", {
+      ms: Date.now() - t0,
+      tag: parsed.data,
+    });
+    return parsed.data;
   }
 
   log.warn("gpt.tagSound returned invalid JSON, falling back", {
