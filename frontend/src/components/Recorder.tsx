@@ -92,21 +92,12 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
       setPhase("uploading");
       try {
         const durationMs = Math.min(MAX_MS, Date.now() - startedAtRef.current);
-        console.info("[voice] finalize → blob ready", {
-          bytes: blob.size,
-          mime: blob.type,
-          durationMs,
-        });
-        const [rms, coords] = await Promise.all([
+        const [rms, coords, wavBlob] = await Promise.all([
           computeRms(blob),
           getCoordsOnce(),
           blobToWav(blob),
         ]);
-        console.info("[voice] finalize ← metadata", {
-          rms,
-          coords: coords ? "granted" : "denied/none",
-        });
-        const { post } = await uploadPost(blob, {
+        const { post } = await uploadPost(wavBlob, {
           durationMs,
           rms,
           latitude: coords?.latitude,
@@ -121,15 +112,11 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
         setPhase("done");
         onPosted(post);
       } catch (err) {
-        console.error("[voice] finalize ✖ failed", err);
-        const message =
-          err instanceof ApiError
-            ? err.code === "outside_window"
-              ? "Outside the 9pm window."
-              : err.code === "already_posted_today"
-                ? "You've already shared today."
-                : "Couldn't upload. Try again."
-            : "Couldn't upload. Try again.";
+        console.log(err);
+        let message = "Couldn't upload. Try again.";
+        if (err instanceof ApiError && err.code === "already_posted_today") {
+          message = "You've already shared today.";
+        }
         setError(message);
         setPhase("error");
       }
@@ -138,10 +125,7 @@ export function Recorder({ hasPostedToday, todaysPost, onPosted }: Props) {
   );
 
   const start = useCallback(async () => {
-    if (locked || !inWindow) {
-      console.warn("[voice] start blocked", { locked, inWindow });
-      return;
-    }
+    if (locked) return;
     setError(null);
     try {
       console.info("[voice] requesting microphone…");
