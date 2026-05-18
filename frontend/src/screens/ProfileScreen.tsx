@@ -32,6 +32,14 @@ export function ProfileScreen() {
     return viewStart > firstStart;
   }, [view, firstMonth]);
 
+  const hasNext = useMemo(() => {
+    const viewStart = new Date(Date.UTC(view.year, view.monthIndex, 1));
+    const latestStart = new Date(
+      Date.UTC(MOCK_PROFILE_VIEW.year, MOCK_PROFILE_VIEW.monthIndex, 1),
+    );
+    return viewStart < latestStart;
+  }, [view]);
+
   return (
     <div className="flex flex-col gap-6 px-5 pt-6 pb-10">
       <section className="flex items-start justify-between">
@@ -84,7 +92,9 @@ export function ProfileScreen() {
         monthIndex={view.monthIndex}
         days={stats.days}
         hasPrev={hasPrev}
+        hasNext={hasNext}
         onPrev={() => setView(monthOffset(view.year, view.monthIndex, -1))}
+        onNext={() => setView(monthOffset(view.year, view.monthIndex, +1))}
       />
     </div>
   );

@@ -8,7 +8,9 @@ interface Props {
   monthIndex: number;
   days: DayEntry[];
   onPrev: () => void;
+  onNext: () => void;
   hasPrev: boolean;
+  hasNext: boolean;
 }
 
 const MONTHS = [
@@ -35,7 +37,9 @@ export function MemoriesCalendar({
   monthIndex,
   days,
   onPrev,
+  onNext,
   hasPrev,
+  hasNext,
 }: Props) {
   const cells = useMemo(() => {
     const prefix = `${year}-${pad(monthIndex + 1)}-`;
@@ -51,9 +55,31 @@ export function MemoriesCalendar({
 
   return (
     <section className="flex flex-col gap-4">
-      <p className="text-center text-xs tracking-[var(--tracking-chrome)] text-mist-200 uppercase">
-        {MONTHS[monthIndex]} {year}
-      </p>
+      <div className="flex items-center justify-between px-4">
+        <button
+          type="button"
+          onClick={onPrev}
+          disabled={!hasPrev}
+          style={{ opacity: hasPrev ? 1 : 0.2 }}
+          className="px-3 py-2 text-2xl text-mist-300"
+        >
+          ←
+        </button>
+
+        <span className="text-xs tracking-[var(--tracking-chrome)] text-mist-200 uppercase">
+          {MONTHS[monthIndex]} {year}
+        </span>
+
+        <button
+          type="button"
+          onClick={onNext}
+          disabled={!hasNext}
+          style={{ opacity: hasNext ? 1 : 0.2 }}
+          className="px-3 py-2 text-2xl text-mist-300"
+        >
+          →
+        </button>
+      </div>
 
       <motion.div layout className="grid grid-cols-4 gap-3" initial={false}>
         {cells.map(({ day, iso, emoji }) => {
@@ -93,16 +119,6 @@ export function MemoriesCalendar({
           );
         })}
       </motion.div>
-
-      {hasPrev ? (
-        <button
-          type="button"
-          onClick={onPrev}
-          className="mx-auto mt-2 text-xs tracking-[var(--tracking-chrome)] text-mist-200 uppercase underline-offset-4 hover:underline"
-        >
-          Previous Month
-        </button>
-      ) : null}
     </section>
   );
 }
