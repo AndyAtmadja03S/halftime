@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { BUCKET, supabase } from "../lib/supabase.js";
-import { requireDeviceId } from "../middleware/deviceId.js";
+import { optionalAuth, requireAuth } from "../middleware/auth.js";
 
 const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
@@ -11,7 +11,7 @@ const querySchema = z.object({
 
 export const feedRouter = Router();
 
-feedRouter.get("/", requireDeviceId, async (req, res, next) => {
+feedRouter.get("/", optionalAuth, async (req, res, next) => {
   try {
     const parsed = querySchema.safeParse(req.query);
     if (!parsed.success) {
@@ -19,18 +19,23 @@ feedRouter.get("/", requireDeviceId, async (req, res, next) => {
       return;
     }
     const { limit, before, mine } = parsed.data;
-    const deviceId = req.deviceId!;
+    const userId = req.userId;
+
+    if (mine && !userId) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
 
     let query = supabase
       .from("posts")
       .select(
-        "id, device_id, audio_path, duration_ms, emoji, category, description, latitude, longitude, created_at, post_date",
+        "id, user_id, device_id, audio_path, duration_ms, emoji, category, description, latitude, longitude, created_at, post_date",
       )
       .order("created_at", { ascending: false })
       .limit(limit);
 
     if (before) query = query.lt("created_at", before);
-    if (mine) query = query.eq("device_id", deviceId);
+    if (mine && userId) query = query.eq("user_id", userId);
 
     const { data, error } = await query;
     if (error) throw error;
@@ -52,7 +57,9 @@ feedRouter.get("/", requireDeviceId, async (req, res, next) => {
       latitude: row.latitude,
       longitude: row.longitude,
       audio_url: signed[i].data?.signedUrl ?? null,
-      is_mine: row.device_id === deviceId,
+      is_mine: userId
+        ? row.user_id === userId || row.device_id === userId
+        : false,
     }));
 
     const nextCursor =
@@ -64,14 +71,15 @@ feedRouter.get("/", requireDeviceId, async (req, res, next) => {
   }
 });
 
-feedRouter.get("/today", requireDeviceId, async (req, res, next) => {
+feedRouter.get("/today", requireAuth, async (req, res, next) => {
   try {
     const today = new Date().toISOString().slice(0, 10);
     const { data, error } = await supabase
       .from("posts")
       .select("id, created_at")
-      .eq("device_id", req.deviceId!)
+      .eq("user_id", req.userId!)
       .eq("post_date", today)
+      .limit(1)
       .maybeSingle();
     if (error) throw error;
     res.json({ hasPostedToday: !!data });

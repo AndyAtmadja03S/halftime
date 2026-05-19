@@ -1,7 +1,6 @@
 import { Router } from "express";
-import { handleFor } from "../lib/handle.js";
 import { supabase } from "../lib/supabase.js";
-import { requireDeviceId } from "../middleware/deviceId.js";
+import { requireAuth } from "../middleware/auth.js";
 
 export const meRouter = Router();
 
@@ -30,20 +29,27 @@ function computeStreak(dates: string[]): number {
   return streak;
 }
 
-meRouter.get("/stats", requireDeviceId, async (req, res, next) => {
+meRouter.get("/stats", requireAuth, async (req, res, next) => {
   try {
-    const deviceId = req.deviceId!;
+    const userId = req.userId!;
+
+    const { data: user, error: userErr } = await supabase
+      .from("users")
+      .select("username, display_name")
+      .eq("id", userId)
+      .single();
+    if (userErr) throw userErr;
 
     const { count, error: countErr } = await supabase
       .from("posts")
       .select("id", { count: "exact", head: true })
-      .eq("device_id", deviceId);
+      .eq("user_id", userId);
     if (countErr) throw countErr;
 
     const { data, error } = await supabase
       .from("posts")
       .select("post_date, emoji, category, created_at")
-      .eq("device_id", deviceId)
+      .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(400);
     if (error) throw error;
@@ -59,7 +65,7 @@ meRouter.get("/stats", requireDeviceId, async (req, res, next) => {
       rows.length > 0 ? rows[rows.length - 1].date : null;
 
     res.json({
-      handle: handleFor(deviceId),
+      handle: (user.display_name as string | null) ?? user.username,
       totalCaptures: count ?? 0,
       dayStreak: streak,
       firstActive,

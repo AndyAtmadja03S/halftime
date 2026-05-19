@@ -10,6 +10,7 @@ import { MulterError } from "multer";
 import { env } from "./lib/env.js";
 import { createLogger } from "./lib/log.js";
 import { feedRouter } from "./routes/feed.js";
+import { authRouter } from "./routes/auth.js";
 import { meRouter } from "./routes/me.js";
 import { postsRouter } from "./routes/posts.js";
 
@@ -20,6 +21,7 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
   if (req.path.startsWith("/api/")) {
     log.debug(`${req.method} ${req.path}`, {
       deviceId: req.header("x-device-id") ?? null,
+      auth: req.header("authorization") ? "Bearer …" : null,
       hour: req.header("x-device-hour") ?? null,
     });
   }
@@ -33,6 +35,7 @@ app.get("/api/health", (_req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
+app.use("/api/auth", authRouter);
 app.use("/api/posts", postsRouter);
 app.use("/api/feed", feedRouter);
 app.use("/api/me", meRouter);
