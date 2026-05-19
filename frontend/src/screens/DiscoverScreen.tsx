@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchFeed, type Post } from "../lib/api";
+import {
+  fetchFeed,
+  votePost,
+  type FeedSort,
+  type Post,
+  type VoteValue,
+} from "../lib/api";
 import { SoundDetailModal } from "../components/SoundDetailModal";
 
 interface Props {
@@ -45,10 +51,25 @@ function formatRelativeTime(iso: string): string {
   return `${mo}MO`;
 }
 
-export function DiscoverScreen({ todaysPost }: Props) {
+function formatScore(score: number): string {
+  if (score === 0) return "0";
+  const abs = Math.abs(score);
+  if (abs < 1000) return String(score);
+  const k = (score / 1000).toFixed(1).replace(/\.0$/, "");
+  return `${k}K`;
+}
+
+const SORT_TABS: { value: FeedSort; label: string }[] = [
+  { value: "hot", label: "Hot" },
+  { value: "new", label: "New" },
+  { value: "top", label: "Top" },
+];
+
+export function DiscoverScreen({ todaysPost }: Readonly<Props>) {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [friendsOnly, setFriendsOnly] = useState(false);
+  const [sort, setSort] = useState<FeedSort>("hot");
 
   const [playingPostId, setPlayingPostId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -56,7 +77,7 @@ export function DiscoverScreen({ todaysPost }: Props) {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    fetchFeed({ limit: 50, friends: friendsOnly })
+    fetchFeed({ limit: 50, friends: friendsOnly, sort })
       .then((res) => {
         if (alive) setPosts(res.posts);
       })
@@ -69,7 +90,7 @@ export function DiscoverScreen({ todaysPost }: Props) {
     return () => {
       alive = false;
     };
-  }, [friendsOnly]);
+  }, [friendsOnly, sort]);
 
   useEffect(() => {
     if (!todaysPost || friendsOnly) return;
@@ -123,6 +144,44 @@ export function DiscoverScreen({ todaysPost }: Props) {
     }
   };
 
+  const handleVote = async (post: Post, direction: 1 | -1) => {
+    const next: VoteValue = post.my_vote === direction ? 0 : direction;
+    const delta = next - post.my_vote;
+    const optimistic: Post = {
+      ...post,
+      my_vote: next,
+      score: post.score + delta,
+      upvotes:
+        post.upvotes +
+        (next === 1 ? 1 : 0) -
+        (post.my_vote === 1 ? 1 : 0),
+      downvotes:
+        post.downvotes +
+        (next === -1 ? 1 : 0) -
+        (post.my_vote === -1 ? 1 : 0),
+    };
+    setPosts((prev) => prev.map((p) => (p.id === post.id ? optimistic : p)));
+    try {
+      const res = await votePost(post.id, next);
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === post.id
+            ? {
+                ...p,
+                upvotes: res.upvotes,
+                downvotes: res.downvotes,
+                score: res.score,
+                my_vote: res.my_vote,
+              }
+            : p,
+        ),
+      );
+    } catch (err) {
+      console.error("Vote failed:", err);
+      setPosts((prev) => prev.map((p) => (p.id === post.id ? post : p)));
+    }
+  };
+
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
 
   const visiblePosts = posts;
@@ -130,29 +189,46 @@ export function DiscoverScreen({ todaysPost }: Props) {
   return (
     <div className="relative flex h-full flex-col bg-black font-sans text-white antialiased overflow-x-hidden">
       <div className="flex gap-2 px-4 pt-3 pb-2">
-      <button
-        type="button"
-        onClick={() => setFriendsOnly(false)}
-        className={`rounded-full px-4 py-1.5 text-[12px] font-semibold tracking-wider uppercase transition-colors duration-200 ${
-          !friendsOnly
-            ? "bg-neutral-600 text-white"
-            : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200"
-        }`}
-      >
-        Everyone
-      </button>
-      <button
-        type="button"
-        onClick={() => setFriendsOnly(true)}
-        className={`rounded-full px-4 py-1.5 text-[12px] font-semibold tracking-wider uppercase transition-colors duration-200 ${
-          friendsOnly
-            ? "bg-neutral-600 text-white"
-            : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200"
-        }`}
-      >
-        Friends
-      </button>
-    </div>
+        <button
+          type="button"
+          onClick={() => setFriendsOnly(false)}
+          className={`rounded-full px-4 py-1.5 text-[12px] font-semibold tracking-wider uppercase transition-colors duration-200 ${
+            !friendsOnly
+              ? "bg-neutral-600 text-white"
+              : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200"
+          }`}
+        >
+          Everyone
+        </button>
+        <button
+          type="button"
+          onClick={() => setFriendsOnly(true)}
+          className={`rounded-full px-4 py-1.5 text-[12px] font-semibold tracking-wider uppercase transition-colors duration-200 ${
+            friendsOnly
+              ? "bg-neutral-600 text-white"
+              : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200"
+          }`}
+        >
+          Friends
+        </button>
+      </div>
+
+      <div className="flex gap-1 px-4 pb-2">
+        {SORT_TABS.map((tab) => (
+          <button
+            key={tab.value}
+            type="button"
+            onClick={() => setSort(tab.value)}
+            className={`rounded-full px-3 py-1 text-[11px] font-semibold tracking-wider uppercase transition-colors duration-200 ${
+              sort === tab.value
+                ? "bg-white/10 text-white"
+                : "text-neutral-500 hover:text-neutral-300"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
       <div className="flex-1 space-y-[11px] overflow-y-auto overflow-x-hidden px-4 pt-1 pb-8">
         {loading ? (
@@ -173,6 +249,12 @@ export function DiscoverScreen({ todaysPost }: Props) {
           visiblePosts.map((post, index) => {
             const isCurrentlyPlaying = playingPostId === post.id;
             const canPlay = post.audio_url !== null;
+            const scoreColor =
+              post.score > 0
+                ? "text-emerald-400"
+                : post.score < 0
+                  ? "text-rose-400"
+                  : "text-neutral-400";
 
             return (
               <div
@@ -180,7 +262,6 @@ export function DiscoverScreen({ todaysPost }: Props) {
                 onClick={() => setSelectedPost(post)}
                 className="relative flex rounded-2xl bg-[#111] cursor-pointer transition-all duration-200 hover:bg-[#191919] active:scale-[0.98]"
               >
-
                 <div className="flex flex-1 gap-3 px-4 py-3.5 min-w-0">
                   {/* Emoji bubble */}
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/[0.04] text-[24px] leading-none select-none">
@@ -206,21 +287,58 @@ export function DiscoverScreen({ todaysPost }: Props) {
                           {formatRelativeTime(post.created_at)}
                         </p>
                       </div>
-                      <button
-                        type="button"
+
+                      {/* Vote stack */}
+                      <div
+                        className="flex shrink-0 items-center gap-1 rounded-full bg-white/[0.04] px-1.5 py-0.5"
                         onClick={(e) => e.stopPropagation()}
-                        className="shrink-0 p-1 text-[#444] transition-colors duration-200 hover:text-white"
-                        aria-label="More options"
                       >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 24 24"
-                          fill="currentColor"
-                          className="h-4 w-4"
+                        <button
+                          type="button"
+                          onClick={() => handleVote(post, 1)}
+                          aria-label="Upvote"
+                          aria-pressed={post.my_vote === 1}
+                          className={`grid h-6 w-6 place-items-center rounded-full transition-colors duration-150 ${
+                            post.my_vote === 1
+                              ? "text-emerald-400"
+                              : "text-neutral-500 hover:text-emerald-300"
+                          }`}
                         >
-                          <path d="M12 10.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Zm7 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Zm-14 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Z" />
-                        </svg>
-                      </button>
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            className="h-3.5 w-3.5"
+                          >
+                            <path d="M12 4l8 9h-5v7H9v-7H4l8-9z" />
+                          </svg>
+                        </button>
+                        <span
+                          className={`min-w-[18px] text-center text-[11px] font-semibold tabular-nums ${scoreColor}`}
+                        >
+                          {formatScore(post.score)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleVote(post, -1)}
+                          aria-label="Downvote"
+                          aria-pressed={post.my_vote === -1}
+                          className={`grid h-6 w-6 place-items-center rounded-full transition-colors duration-150 ${
+                            post.my_vote === -1
+                              ? "text-rose-400"
+                              : "text-neutral-500 hover:text-rose-300"
+                          }`}
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            className="h-3.5 w-3.5"
+                          >
+                            <path d="M12 20l-8-9h5V4h6v7h5l-8 9z" />
+                          </svg>
+                        </button>
+                      </div>
                     </div>
 
                     {/* Waveform row */}

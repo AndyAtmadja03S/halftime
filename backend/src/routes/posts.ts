@@ -24,6 +24,13 @@ const metadataSchema = z.object({
   longitude: z.coerce.number().min(-180).max(180).optional(),
 });
 
+const voteSchema = z.object({
+  value: z.union([z.literal(-1), z.literal(0), z.literal(1)]),
+});
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const postsRouter = Router();
 
 postsRouter.post(
@@ -148,6 +155,11 @@ postsRouter.post(
           latitude: inserted.latitude,
           longitude: inserted.longitude,
           is_mine: true,
+          handle: req.username ?? null,
+          upvotes: 0,
+          downvotes: 0,
+          score: 0,
+          my_vote: 0,
         },
       });
     } catch (err) {
@@ -165,3 +177,42 @@ postsRouter.post(
     }
   },
 );
+
+postsRouter.post("/:id/vote", requireAuth, async (req, res, next) => {
+  try {
+    const postId = String(req.params.id ?? "");
+    if (!UUID_RE.test(postId)) {
+      res.status(400).json({ error: "invalid_post_id" });
+      return;
+    }
+    const parsed = voteSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res
+        .status(400)
+        .json({ error: "invalid_vote", details: parsed.error.flatten() });
+      return;
+    }
+    const { data, error } = await supabase.rpc("cast_vote", {
+      p_post_id: postId,
+      p_user_id: req.userId!,
+      p_value: parsed.data.value,
+    });
+    if (error) {
+      log.error("cast_vote rpc failed", error);
+      throw error;
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) {
+      res.status(404).json({ error: "post_not_found" });
+      return;
+    }
+    res.json({
+      upvotes: row.upvotes,
+      downvotes: row.downvotes,
+      score: row.score,
+      my_vote: row.my_vote ?? 0,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
