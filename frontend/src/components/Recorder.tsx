@@ -2,8 +2,10 @@ import clsx from "clsx";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, type Post, uploadPost } from "../lib/api";
+import { isLoggedIn } from "../lib/auth";
 import { getCoordsOnce } from "../lib/geolocation";
 import { blobToWav } from "../lib/wav";
+import { AuthModal } from "./AuthModal";
 import { LiveWaveform } from "./LiveWaveform";
 
 const MAX_MS = 10_000;
@@ -57,6 +59,8 @@ export function Recorder({ todaysPost, onPosted }: Props) {
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const [authOpen, setAuthOpen] = useState(false);
+  const pendingRecordRef = useRef(false);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -132,7 +136,12 @@ export function Recorder({ todaysPost, onPosted }: Props) {
         const message =
           err instanceof ApiError && err.code === "upload_timeout"
             ? "Upload timed out. Try again."
-            : "Couldn't upload. Try again.";
+            : err instanceof ApiError && err.code === "unauthorized"
+              ? "Session expired. Sign in again."
+              : "Couldn't upload. Try again.";
+        if (err instanceof ApiError && err.code === "unauthorized") {
+          setAuthOpen(true);
+        }
         setError(message);
         setPhase("error");
       }
@@ -140,7 +149,7 @@ export function Recorder({ todaysPost, onPosted }: Props) {
     [onPosted],
   );
 
-  const start = useCallback(async () => {
+  const startRecording = useCallback(async () => {
     if (isBusy) return;
     setError(null);
     try {
@@ -202,6 +211,24 @@ export function Recorder({ todaysPost, onPosted }: Props) {
       cleanup();
     }
   }, [cleanup, finalize, isBusy]);
+
+  const start = useCallback(() => {
+    if (isBusy) return;
+    if (!isLoggedIn()) {
+      pendingRecordRef.current = true;
+      setAuthOpen(true);
+      return;
+    }
+    void startRecording();
+  }, [isBusy, startRecording]);
+
+  const handleAuthSuccess = useCallback(() => {
+    setAuthOpen(false);
+    if (pendingRecordRef.current) {
+      pendingRecordRef.current = false;
+      void startRecording();
+    }
+  }, [startRecording]);
 
   const stop = useCallback(() => {
     if (recorderRef.current && recorderRef.current.state === "recording") {
@@ -313,6 +340,15 @@ export function Recorder({ todaysPost, onPosted }: Props) {
           </motion.span>
         </AnimatePresence>
       </button>
+
+      <AuthModal
+        isOpen={authOpen}
+        onClose={() => {
+          pendingRecordRef.current = false;
+          setAuthOpen(false);
+        }}
+        onSuccess={handleAuthSuccess}
+      />
     </div>
   );
 }

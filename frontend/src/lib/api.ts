@@ -1,4 +1,5 @@
 import { getDeviceHour, getDeviceId } from "./deviceId";
+import { getSessionToken, type AuthUser } from "./auth";
 
 export interface Post {
   id: string;
@@ -32,11 +33,25 @@ export interface FeedResponse {
   nextCursor: string | null;
 }
 
-function deviceHeaders(): HeadersInit {
+export interface AuthResponse {
+  token: string;
+  user: AuthUser;
+}
+
+function baseHeaders(): HeadersInit {
   return {
     "x-device-id": getDeviceId(),
     "x-device-hour": String(getDeviceHour()),
   };
+}
+
+function authHeaders(): HeadersInit {
+  const headers: Record<string, string> = {
+    ...(baseHeaders() as Record<string, string>),
+  };
+  const token = getSessionToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
 }
 
 export class ApiError extends Error {
@@ -59,7 +74,40 @@ async function handle<T>(res: Response): Promise<T> {
     }
     throw new ApiError(res.status, body.error ?? "request_failed", body.message);
   }
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
+}
+
+export async function register(
+  username: string,
+  password: string,
+): Promise<AuthResponse> {
+  const res = await fetch("/api/auth/register", {
+    method: "POST",
+    headers: { ...baseHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  return handle<AuthResponse>(res);
+}
+
+export async function login(
+  username: string,
+  password: string,
+): Promise<AuthResponse> {
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { ...baseHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  return handle<AuthResponse>(res);
+}
+
+export async function logout(): Promise<void> {
+  const res = await fetch("/api/auth/logout", {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  await handle(res);
 }
 
 export async function fetchFeed(params: {
@@ -72,13 +120,13 @@ export async function fetchFeed(params: {
   if (params.limit) qs.set("limit", String(params.limit));
   if (params.mine) qs.set("mine", "1");
   const res = await fetch(`/api/feed?${qs.toString()}`, {
-    headers: deviceHeaders(),
+    headers: authHeaders(),
   });
   return handle<FeedResponse>(res);
 }
 
 export async function fetchTodayStatus(): Promise<{ hasPostedToday: boolean }> {
-  const res = await fetch(`/api/feed/today`, { headers: deviceHeaders() });
+  const res = await fetch(`/api/feed/today`, { headers: authHeaders() });
   return handle(res);
 }
 
@@ -116,7 +164,7 @@ export async function uploadPost(
   try {
     const res = await fetch(`/api/posts`, {
       method: "POST",
-      headers: deviceHeaders(),
+      headers: authHeaders(),
       body: form,
       signal: controller.signal,
     });
@@ -134,6 +182,6 @@ export async function uploadPost(
 }
 
 export async function fetchStats(): Promise<MeStats> {
-  const res = await fetch(`/api/me/stats`, { headers: deviceHeaders() });
+  const res = await fetch(`/api/me/stats`, { headers: authHeaders() });
   return handle<MeStats>(res);
 }

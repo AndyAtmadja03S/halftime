@@ -5,7 +5,7 @@ import { z } from "zod";
 import { createLogger } from "../lib/log.js";
 import { BUCKET, supabase } from "../lib/supabase.js";
 import { tagSound } from "../lib/openai.js";
-import { requireDeviceId } from "../middleware/deviceId.js";
+import { requireAuth } from "../middleware/auth.js";
 
 const log = createLogger("posts");
 
@@ -28,15 +28,17 @@ export const postsRouter = Router();
 
 postsRouter.post(
   "/",
-  requireDeviceId,
+  requireAuth,
   upload.single("audio"),
   async (req, res, next) => {
     const reqId = randomUUID().slice(0, 8);
     const rlog = log.child(reqId);
     const t0 = Date.now();
     try {
+      const userId = req.userId!;
+
       rlog.info("POST /api/posts received", {
-        deviceId: req.deviceId,
+        userId,
         hasFile: !!req.file,
         fileBytes: req.file?.size,
         mimetype: req.file?.mimetype,
@@ -65,10 +67,8 @@ postsRouter.post(
         return;
       }
 
-      const deviceId = req.deviceId!;
-
       const buffer = req.file.buffer;
-      const objectPath = `${deviceId}/${randomUUID()}.wav`;
+      const objectPath = `${userId}/${randomUUID()}.wav`;
 
       rlog.info("storage.upload → start", {
         path: objectPath,
@@ -95,19 +95,24 @@ postsRouter.post(
 
       rlog.info("db.insert → start");
       const insertT0 = Date.now();
+
+      const row: Record<string, unknown> = {
+        user_id: userId,
+        audio_path: objectPath,
+        duration_ms: parsed.data.durationMs,
+        emoji: tag.emoji,
+        category: tag.category,
+        description: tag.description,
+        transcript: null,
+        latitude: parsed.data.latitude ?? null,
+        longitude: parsed.data.longitude ?? null,
+      };
+      // Legacy column if still present in Supabase
+      row.device_id = userId;
+
       const { data: inserted, error: insertErr } = await supabase
         .from("posts")
-        .insert({
-          device_id: deviceId,
-          audio_path: objectPath,
-          duration_ms: parsed.data.durationMs,
-          emoji: tag.emoji,
-          category: tag.category,
-          description: tag.description,
-          transcript: null,
-          latitude: parsed.data.latitude ?? null,
-          longitude: parsed.data.longitude ?? null,
-        })
+        .insert(row)
         .select("*")
         .single();
 

@@ -1,7 +1,9 @@
 import { motion } from "framer-motion";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { AuthModal } from "../components/AuthModal";
 import { MemoriesCalendar } from "../components/MemoriesCalendar";
-import { MOCK_PROFILE_STATS, MOCK_PROFILE_VIEW } from "../lib/mockProfile";
+import { fetchStats, type MeStats } from "../lib/api";
+import { getStoredUser, isLoggedIn } from "../lib/auth";
 
 function monthOffset(year: number, monthIndex: number, delta: number) {
   const d = new Date(Date.UTC(year, monthIndex + delta, 1));
@@ -13,15 +15,49 @@ function formatMonthShort(year: number, monthIndex: number): string {
   return d.toLocaleString(undefined, { month: "short", year: "2-digit" });
 }
 
-export function ProfileScreen() {
-  const stats = MOCK_PROFILE_STATS;
-  const [view, setView] = useState(MOCK_PROFILE_VIEW);
+function currentMonthView() {
+  const now = new Date();
+  return { year: now.getUTCFullYear(), monthIndex: now.getUTCMonth() };
+}
 
-  const firstMonth = useMemo(() => {
-    if (!stats.firstActive) return null;
-    const d = new Date(stats.firstActive);
-    return { year: d.getUTCFullYear(), monthIndex: d.getUTCMonth() };
-  }, [stats.firstActive]);
+export function ProfileScreen() {
+  const [authed, setAuthed] = useState(isLoggedIn());
+  const storedUser = getStoredUser();
+  const [stats, setStats] = useState<MeStats | null>(null);
+  const [loading, setLoading] = useState(authed);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [view, setView] = useState(currentMonthView);
+
+  useEffect(() => {
+    if (!authed) {
+      setLoading(false);
+      setStats(null);
+      return;
+    }
+    setLoading(true);
+    fetchStats()
+      .then(setStats)
+      .catch(() => setStats(null))
+      .finally(() => setLoading(false));
+  }, [authed]);
+
+  const latestView = useMemo(() => {
+    if (stats?.firstActive) {
+      const d = new Date(stats.firstActive);
+      const now = new Date();
+      return {
+        year: now.getUTCFullYear(),
+        monthIndex: now.getUTCMonth(),
+        first: {
+          year: d.getUTCFullYear(),
+          monthIndex: d.getUTCMonth(),
+        },
+      };
+    }
+    return { ...currentMonthView(), first: null };
+  }, [stats?.firstActive]);
+
+  const firstMonth = latestView.first;
 
   const hasPrev = useMemo(() => {
     if (!firstMonth) return false;
@@ -35,10 +71,49 @@ export function ProfileScreen() {
   const hasNext = useMemo(() => {
     const viewStart = new Date(Date.UTC(view.year, view.monthIndex, 1));
     const latestStart = new Date(
-      Date.UTC(MOCK_PROFILE_VIEW.year, MOCK_PROFILE_VIEW.monthIndex, 1),
+      Date.UTC(latestView.year, latestView.monthIndex, 1),
     );
     return viewStart < latestStart;
-  }, [view]);
+  }, [view, latestView]);
+
+  if (!authed) {
+    return (
+      <div className="flex flex-col gap-6 px-5 pt-6 pb-10">
+        <section>
+          <h2 className="text-xl font-semibold text-mist-500">Your Memories</h2>
+          <p className="mt-2 text-sm text-mist-200">
+            Sign in to see your capture history, streak, and calendar.
+          </p>
+        </section>
+        <button
+          type="button"
+          onClick={() => setAuthOpen(true)}
+          style={{ color: "var(--color-ink-300)" }}
+          className="rounded-lg border border-mist-500 bg-mist-500 px-5 py-3 text-sm font-medium tracking-[var(--tracking-chrome)] uppercase"
+        >
+          Sign in
+        </button>
+        <AuthModal
+          isOpen={authOpen}
+          onClose={() => setAuthOpen(false)}
+          onSuccess={() => {
+            setAuthOpen(false);
+            setAuthed(true);
+          }}
+          title="Sign in to your account"
+          subtitle="Use the username and password you created when you first posted."
+        />
+      </div>
+    );
+  }
+
+  if (loading || !stats) {
+    return (
+      <div className="flex flex-col gap-6 px-5 pt-6 pb-10">
+        <p className="text-sm text-mist-200">Loading your memories…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6 px-5 pt-6 pb-10">
@@ -46,7 +121,7 @@ export function ProfileScreen() {
         <div>
           <h2 className="text-xl font-semibold text-mist-500">Your Memories</h2>
           <p className="mt-1 text-xs tracking-[var(--tracking-chrome)] text-mist-200 uppercase">
-            {stats.handle}
+            {stats.handle ?? storedUser?.displayName ?? storedUser?.username}
           </p>
         </div>
         <motion.div
