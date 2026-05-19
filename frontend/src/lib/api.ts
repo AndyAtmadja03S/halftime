@@ -87,6 +87,7 @@ export interface UploadOptions {
   rms?: number;
   latitude?: number;
   longitude?: number;
+  anonymous?: boolean;
 }
 
 export async function uploadPost(
@@ -103,6 +104,12 @@ export async function uploadPost(
   if (opts.longitude !== undefined)
     form.append("longitude", String(opts.longitude));
 
+  // Anonymous posts use a one-time random device ID so the post isn't
+  // linked to the user's persistent profile.
+  const headers: HeadersInit = opts.anonymous
+    ? { "x-device-id": crypto.randomUUID(), "x-device-hour": String(getDeviceHour()) }
+    : deviceHeaders();
+
   console.info("[voice] upload → start", {
     bytes: blob.size,
     mime: blob.type,
@@ -116,7 +123,7 @@ export async function uploadPost(
   try {
     const res = await fetch(`/api/posts`, {
       method: "POST",
-      headers: deviceHeaders(),
+      headers,
       body: form,
       signal: controller.signal,
     });

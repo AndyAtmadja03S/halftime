@@ -1,15 +1,16 @@
 import clsx from "clsx";
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, type Post, uploadPost } from "../lib/api";
 import { getCoordsOnce } from "../lib/geolocation";
 import { blobToWav } from "../lib/wav";
 import { LiveWaveform } from "./LiveWaveform";
+import { Waveform } from "./Waveform";
 
 const MAX_MS = 10_000;
 const TICK_MS = 100;
 
-type Phase = "idle" | "recording" | "uploading" | "done" | "error";
+type Phase = "idle" | "recording" | "review" | "uploading" | "done" | "error";
 
 interface Props {
   todaysPost: Post | null;
@@ -57,11 +58,16 @@ export function Recorder({ todaysPost, onPosted }: Props) {
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const [reviewBlob, setReviewBlob] = useState<Blob | null>(null);
+  const [reviewUrl, setReviewUrl] = useState<string | null>(null);
+  const [shareLocation, setShareLocation] = useState(true);
+  const [anonymous, setAnonymous] = useState(false);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef<number>(0);
+  const recordedDurationRef = useRef<number>(0);
   const tickRef = useRef<number | null>(null);
   const stopTimerRef = useRef<number | null>(null);
 
@@ -84,19 +90,21 @@ export function Recorder({ todaysPost, onPosted }: Props) {
 
   useEffect(() => cleanup, [cleanup]);
 
+  // Revoke the blob preview URL whenever it changes or the component unmounts.
+  useEffect(() => {
+    return () => {
+      if (reviewUrl) URL.revokeObjectURL(reviewUrl);
+    };
+  }, [reviewUrl]);
+
   const isBusy = phase === "recording" || phase === "uploading";
 
   const finalize = useCallback(
-    async (blob: Blob) => {
+    async (blob: Blob, opts: { shareLocation: boolean; anonymous: boolean }) => {
       setPhase("uploading");
+      setReviewUrl(null); // revoke preview URL (triggers effect cleanup)
       try {
-        const durationMs = Math.min(MAX_MS, Date.now() - startedAtRef.current);
-        console.info("[voice] finalize → start", {
-          bytes: blob.size,
-          mime: blob.type,
-          durationMs,
-        });
-
+        const durationMs = recordedDurationRef.current;
         const t1 = performance.now();
         const wavBlob = await blobToWav(blob);
         console.info("[voice] wav ready", {
@@ -106,11 +114,12 @@ export function Recorder({ todaysPost, onPosted }: Props) {
 
         const [rms, coords] = await Promise.all([
           computeRms(blob),
-          getCoordsOnce(),
+          opts.shareLocation ? getCoordsOnce() : Promise.resolve(null),
         ]);
         console.info("[voice] metadata", {
           rms,
-          coords: coords ? "granted" : "denied/none",
+          coords: coords ? "granted" : "none/off",
+          anonymous: opts.anonymous,
         });
 
         const { post } = await uploadPost(wavBlob, {
@@ -118,13 +127,9 @@ export function Recorder({ todaysPost, onPosted }: Props) {
           rms,
           latitude: coords?.latitude,
           longitude: coords?.longitude,
+          anonymous: opts.anonymous,
         });
-        console.info("[voice] post created", {
-          id: post.id,
-          emoji: post.emoji,
-          category: post.category,
-          description: post.description,
-        });
+        console.info("[voice] post created", { id: post.id, emoji: post.emoji });
         setPhase("done");
         onPosted(post);
       } catch (err) {
@@ -143,6 +148,8 @@ export function Recorder({ todaysPost, onPosted }: Props) {
   const start = useCallback(async () => {
     if (isBusy) return;
     setError(null);
+    setReviewUrl(null);
+    setReviewBlob(null);
     try {
       console.info("[voice] requesting microphone…");
       const s = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -171,13 +178,21 @@ export function Recorder({ todaysPost, onPosted }: Props) {
         const blob = new Blob(chunksRef.current, {
           type: rec.mimeType || "audio/webm",
         });
+        recordedDurationRef.current = Math.min(
+          MAX_MS,
+          Date.now() - startedAtRef.current,
+        );
         console.info("[voice] recording stopped", {
           chunks: chunksRef.current.length,
           totalBytes: blob.size,
-          elapsedMs: Date.now() - startedAtRef.current,
+          elapsedMs: recordedDurationRef.current,
         });
         cleanup();
-        void finalize(blob);
+        // Go to review instead of uploading immediately.
+        const url = URL.createObjectURL(blob);
+        setReviewBlob(blob);
+        setReviewUrl(url);
+        setPhase("review");
       };
       startedAtRef.current = Date.now();
       setElapsed(0);
@@ -201,7 +216,7 @@ export function Recorder({ todaysPost, onPosted }: Props) {
       setPhase("error");
       cleanup();
     }
-  }, [cleanup, finalize, isBusy]);
+  }, [cleanup, isBusy]);
 
   const stop = useCallback(() => {
     if (recorderRef.current && recorderRef.current.state === "recording") {
@@ -210,35 +225,23 @@ export function Recorder({ todaysPost, onPosted }: Props) {
     }
   }, []);
 
+  const retake = useCallback(() => {
+    setReviewUrl(null);
+    setReviewBlob(null);
+    setElapsed(0);
+    setPhase("idle");
+  }, []);
+
+  const upload = useCallback(() => {
+    if (reviewBlob) void finalize(reviewBlob, { shareLocation, anonymous });
+  }, [reviewBlob, finalize, shareLocation, anonymous]);
+
   const remainingS = Math.max(0, Math.ceil((MAX_MS - elapsed) / 1000));
-
-  let buttonLabel = "Start Recording";
-  let buttonDisabled = false;
-  if (phase === "recording") {
-    buttonLabel = "Stop Recording";
-  } else if (phase === "uploading") {
-    buttonLabel = "Listening…";
-    buttonDisabled = true;
-  } else if (phase === "done") {
-    buttonLabel = "Record Again";
-  } else if (phase === "error" && error) {
-    buttonLabel = "Try Again";
-  }
-
-  let buttonClasses: string;
-  if (buttonDisabled) {
-    buttonClasses = "border-line-100 bg-ink-200 text-mist-100";
-  } else if (phase === "recording") {
-    buttonClasses = "border-mist-500 bg-mist-500/10 text-mist-500";
-  } else {
-    buttonClasses = "border-mist-500 bg-mist-500 hover:bg-mist-400";
-  }
-  const isPrimaryStart = !buttonDisabled && phase !== "recording";
-
   const remainingFrac = Math.max(0, (MAX_MS - elapsed) / MAX_MS);
+  const durationS = (recordedDurationRef.current / 1000).toFixed(1);
 
-  const showLastPost = phase !== "recording" && phase !== "uploading";
-  const displayEmoji = showLastPost ? (todaysPost?.emoji ?? "🎙️") : "🎙️";
+  const showLastPost = (phase === "idle" || phase === "done") && !!todaysPost;
+  const displayEmoji = showLastPost ? todaysPost!.emoji : "🎙️";
   const displayDescription =
     phase === "recording"
       ? "Ten seconds of where you are"
@@ -246,73 +249,266 @@ export function Recorder({ todaysPost, onPosted }: Props) {
         ? "Reading the room…"
         : phase === "error" && error
           ? error
-          : (todaysPost?.description ??
-            "Hold a quiet moment. Share where you are.");
+          : (todaysPost?.description ?? "Hold a quiet moment. Share where you are.");
+
+  const showToggles = phase === "idle" || phase === "review" || phase === "error";
+  const showRings = phase === "idle" || phase === "recording" || phase === "uploading";
+  const ringsAreFast = phase === "recording" || phase === "uploading";
 
   return (
-    <div className="flex w-full flex-col items-stretch gap-4 rounded-2xl border border-line-200 bg-ink-100/70 p-6 backdrop-blur">
-      <div className="flex items-center justify-between gap-4">
-        <motion.div
-          layout
-          className="grid h-16 w-16 shrink-0 place-items-center rounded-xl border border-line-200 bg-ink-200"
-          aria-hidden
+    <div className="flex h-full flex-col py-8">
+
+      {/* ── Stage (grows to fill vertical space, orb lives here) ── */}
+      <div className="relative flex flex-1 items-center justify-center w-full">
+
+        {/* Central orb — the only flex child, always perfectly centred */}
+        <div className="relative grid h-44 w-44 place-items-center">
+          {showRings &&
+            [0, 1, 2].map((i) => (
+              <SonarRing key={i} index={i} fast={ringsAreFast} />
+            ))}
+          <div
+            className="relative z-10 grid h-44 w-44 place-items-center rounded-full border border-line-200 bg-ink-100/60 backdrop-blur-sm"
+          >
+            <AnimatePresence mode="wait">
+              <motion.span
+                key={displayEmoji}
+                initial={{ scale: 0.7, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.7, opacity: 0 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                className="select-none text-6xl leading-none"
+              >
+                {displayEmoji}
+              </motion.span>
+            </AnimatePresence>
+          </div>
+        </div>
+
+        {/* Waveforms — absolutely positioned so they never push the orb */}
+        <div className="absolute inset-x-0 bottom-0">
+          {/* Live waveform + countdown (recording only) */}
+          {phase === "recording" && (
+            <div className="w-full">
+              <LiveWaveform stream={stream} />
+              <div className="relative mt-4 h-[3px] w-full overflow-hidden rounded-full bg-black-200">
+                <motion.div
+                  className="absolute inset-y-0 left-0 bg-mist-500"
+                  initial={false}
+                  animate={{ width: `${remainingFrac * 100}%` }}
+                  transition={{ duration: 0.1, ease: "linear" }}
+                />
+              </div>
+              <p className="mt-2 text-right text-[11px] tracking-[var(--tracking-chrome)] text-mist-300 uppercase">
+                {remainingS}s remaining
+              </p>
+            </div>
+          )}
+
+          {/* Review waveform */}
+          {phase === "review" && reviewUrl && (
+            <div className="w-full">
+              <p className="mb-3 text-center text-[10px] tracking-[var(--tracking-chrome)] text-mist-100 uppercase">
+                Review · {durationS}s
+              </p>
+              <Waveform src={reviewUrl} color="rgba(255,255,255,0.6)" />
+            </div>
+          )}
+        </div>
+
+      </div>
+
+      {/* ── Controls (anchored to bottom) ── */}
+      <div className="flex flex-col items-center gap-5 w-full">
+
+        {/* Description — always in layout to prevent height jumps */}
+        <div
+          className="text-center px-4 transition-opacity duration-300"
+          style={{ opacity: phase === "recording" ? 0 : 1, pointerEvents: phase === "recording" ? "none" : undefined }}
         >
-          <span className="text-3xl leading-none">{displayEmoji}</span>
-        </motion.div>
-        <div className="min-w-0 flex-1">
-          <p className="line-clamp-2 text-sm leading-snug text-mist-300">
+          <motion.p
+            key={displayDescription}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3 }}
+            className="text-base text-mist-300"
+          >
             {displayDescription}
-          </p>
-          {todaysPost && showLastPost ? (
-            <p className="mt-1 text-[10px] tracking-[var(--tracking-chrome)] text-mist-100 uppercase">
+          </motion.p>
+          {todaysPost && (
+            <p
+              className="mt-1 text-[10px] tracking-[var(--tracking-chrome)] text-mist-100 uppercase transition-opacity duration-300"
+              style={{ opacity: showLastPost ? 1 : 0 }}
+            >
               {todaysPost.category.replace("_", " ")} · last capture
             </p>
-          ) : null}
+          )}
         </div>
-      </div>
 
-      <div className="px-1">
-        <LiveWaveform stream={phase === "recording" ? stream : null} />
-      </div>
+        {/* Toggles — always in layout to prevent height jumps */}
+        <div
+          className="flex flex-wrap justify-center gap-2 transition-opacity duration-300"
+          style={{ opacity: showToggles ? 1 : 0, pointerEvents: showToggles ? undefined : "none" }}
+        >
+          <ToggleChip
+            icon={<LocationIcon />}
+            label="Share location"
+            active={shareLocation}
+            onToggle={() => setShareLocation((v) => !v)}
+          />
+          <ToggleChip
+            icon={<PersonIcon />}
+            label="Anonymous"
+            active={anonymous}
+            onToggle={() => setAnonymous((v) => !v)}
+          />
+        </div>
 
-      {phase === "recording" ? (
-        <div className="px-1">
-          <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-black-200">
-            <motion.div
-              className="absolute inset-y-0 left-0 bg-mist-500"
-              initial={false}
-              animate={{ width: `${remainingFrac * 100}%` }}
-              transition={{ duration: 0.1, ease: "linear" }}
-            />
+        {/* Review: retake + upload */}
+        {phase === "review" && (
+          <div className="flex w-full gap-3">
+            <button
+              type="button"
+              onClick={retake}
+              className="flex-1 rounded-xl border border-line-200 px-5 py-4 text-sm font-medium tracking-[var(--tracking-chrome)] text-mist-300 uppercase transition hover:bg-white/[0.04] active:scale-95"
+            >
+              Retake
+            </button>
+            <button
+              type="button"
+              onClick={upload}
+              style={{ color: "var(--color-ink-300)" }}
+              className="flex-[2] rounded-xl border border-mist-500 bg-mist-500 px-5 py-4 text-sm font-medium tracking-[var(--tracking-chrome)] uppercase transition hover:bg-mist-400 active:scale-95"
+            >
+              Upload
+            </button>
           </div>
-          <p className="mt-1 text-right text-[10px] tracking-[var(--tracking-chrome)] text-mist-300 uppercase">
-            {remainingS}s
-          </p>
-        </div>
-      ) : null}
+        )}
 
-      <button
-        type="button"
-        onClick={phase === "recording" ? stop : start}
-        disabled={buttonDisabled}
-        style={isPrimaryStart ? { color: "var(--color-ink-300)" } : undefined}
+        {/* Main record / stop button */}
+        {phase !== "review" && (
+          <button
+            type="button"
+            onClick={phase === "recording" ? stop : start}
+            disabled={phase === "uploading"}
+            style={
+              phase !== "recording" && phase !== "uploading"
+                ? { color: "var(--color-ink-300)" }
+                : undefined
+            }
+            className={clsx(
+              "w-full rounded-xl border px-5 py-4 text-sm font-medium tracking-[var(--tracking-chrome)] uppercase transition active:scale-[0.98]",
+              phase === "uploading"
+                ? "border-line-100 bg-ink-200 text-mist-100"
+                : phase === "recording"
+                  ? "border-mist-500 bg-mist-500/10 text-mist-500"
+                  : "border-mist-500 bg-mist-500 hover:bg-mist-400",
+            )}
+          >
+            <AnimatePresence mode="wait">
+              <motion.span
+                key={phase}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+              >
+                {phase === "recording"
+                  ? "Stop"
+                  : phase === "uploading"
+                    ? "Listening…"
+                    : phase === "done"
+                      ? "Record Again"
+                      : phase === "error"
+                        ? "Try Again"
+                        : "Start Recording"}
+              </motion.span>
+            </AnimatePresence>
+          </button>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function SonarRing({ index, fast }: { index: number; fast: boolean }) {
+  const duration = fast ? 1.0 : 2.6;
+  const delay = (index * duration) / 3;
+  return (
+    <motion.div
+      className="pointer-events-none absolute inset-0 rounded-full border border-white/20"
+      animate={{ scale: [1, 2.8], opacity: [0.6, 0] }}
+      transition={{ duration, delay, repeat: Infinity, ease: "easeOut" }}
+    />
+  );
+}
+
+function ToggleChip({
+  icon,
+  label,
+  active,
+  onToggle,
+}: {
+  icon: ReactNode;
+  label: string;
+  active: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={clsx(
+        "flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition",
+        active
+          ? "border-mist-400/40 bg-mist-500/15 text-mist-400"
+          : "border-line-100 bg-transparent text-mist-100",
+      )}
+    >
+      {icon}
+      {label}
+      {/* mini toggle switch */}
+      <span
         className={clsx(
-          "relative grid place-items-center rounded-lg border px-5 py-3 text-sm font-medium tracking-[var(--tracking-chrome)] uppercase transition",
-          buttonClasses,
+          "relative inline-flex h-3 w-5 shrink-0 items-center rounded-full border transition-colors duration-200",
+          active ? "border-mist-400/60 bg-mist-500/40" : "border-line-200 bg-ink-200",
         )}
       >
-        <AnimatePresence mode="wait">
-          <motion.span
-            key={buttonLabel}
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.2 }}
-          >
-            {buttonLabel}
-          </motion.span>
-        </AnimatePresence>
-      </button>
-    </div>
+        <span
+          className={clsx(
+            "absolute h-2 w-2 rounded-full transition-all duration-200",
+            active ? "left-[9px] bg-mist-400" : "left-[1px] bg-mist-100",
+          )}
+        />
+      </span>
+    </button>
+  );
+}
+
+function LocationIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
+    </svg>
+  );
+}
+
+function PersonIcon() {
+  return (
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+    >
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 20c1-4 4-6 8-6s7 2 8 6" />
+    </svg>
   );
 }

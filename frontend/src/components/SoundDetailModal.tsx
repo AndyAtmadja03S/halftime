@@ -1,7 +1,9 @@
 import { AnimatePresence, motion } from "framer-motion";
+import { useEffect, useState } from "react";
 import { Waveform } from "./Waveform";
 import { colorFor } from "../lib/categoryColor";
 import { relativeTime } from "../lib/relativeTime";
+import { reverseGeocode } from "../lib/reverseGeocode";
 import type { Post } from "../lib/api";
 
 interface Props {
@@ -14,6 +16,27 @@ export function SoundDetailModal({ post, isOpen, onClose }: Props) {
   if (!post) return null;
 
   const accent = colorFor(post.category);
+
+  return <SoundDetailModalInner post={post} isOpen={isOpen} onClose={onClose} accent={accent} />;
+}
+
+function SoundDetailModalInner({
+  post,
+  isOpen,
+  onClose,
+  accent,
+}: { post: Post; isOpen: boolean; onClose: () => void; accent: string }) {
+  const [locationLabel, setLocationLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!post.latitude || !post.longitude) return;
+    setLocationLabel(null);
+    let cancelled = false;
+    reverseGeocode(post.latitude, post.longitude).then((label) => {
+      if (!cancelled) setLocationLabel(label);
+    });
+    return () => { cancelled = true; };
+  }, [post.latitude, post.longitude]);
 
   return (
     <AnimatePresence>
@@ -98,8 +121,8 @@ export function SoundDetailModal({ post, isOpen, onClose }: Props) {
             {post.latitude && post.longitude && (
               <div className="rounded-lg border border-white/5 bg-white/[0.03] px-4 py-3 text-xs">
                 <p className="text-mist-300">Location</p>
-                <p className="mt-1 text-mist-500 font-mono text-[11px]">
-                  {post.latitude.toFixed(4)}° N, {post.longitude.toFixed(4)}° W
+                <p className="mt-1 text-mist-500 text-[11px]">
+                  {locationLabel ?? "Locating…"}
                 </p>
               </div>
             )}

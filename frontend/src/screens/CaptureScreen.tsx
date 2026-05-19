@@ -9,11 +9,12 @@ interface Props {
 
 export function CaptureScreen({ todaysPost, onPosted }: Props) {
   return (
-    <div className="flex h-full flex-col justify-center px-4 pb-10">
+    <div className="h-full px-5">
       <motion.div
-        initial={{ y: -8, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5 }}
+        className="h-full"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.4 }}
       >
         <Recorder todaysPost={todaysPost} onPosted={onPosted} />
       </motion.div>
