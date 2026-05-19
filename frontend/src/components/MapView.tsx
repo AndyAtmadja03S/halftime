@@ -26,6 +26,7 @@ const DARK_STYLE = {
         "https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
       ],
       tileSize: 256,
+      maxzoom: 14,
       attribution:
         '© <a href="https://www.openstreetmap.org/copyright">OSM</a>, © <a href="https://carto.com/attributions">CARTO</a>',
     },
@@ -37,6 +38,12 @@ const DARK_STYLE = {
       source: "carto",
       minzoom: 0,
       maxzoom: 22,
+      paint: {
+        "raster-opacity": 0.92,
+        "raster-brightness-min": 0.15,
+        "raster-saturation": -0.2,
+        "raster-contrast": 0.14,
+      },
     },
   ],
 };
@@ -72,8 +79,8 @@ function buildMarker(post: Post, isMine: boolean): HTMLElement {
       height: ${isMine ? 52 : 40}px;
       border-radius: 999px;
       background: rgba(20,20,26,0.95);
-      border: 1px solid ${isMine ? "rgba(255,255,255,0.75)" : "rgba(255,255,255,0.18)"};
-      box-shadow: ${isMine ? "0 12px 28px -8px rgba(0,0,0,0.7)" : "0 6px 18px -8px rgba(0,0,0,0.6)"};
+      border: 1px solid ${isMine ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.32)"};
+      box-shadow: ${isMine ? "0 12px 28px -8px rgba(0,0,0,0.7)" : "0 6px 18px -4px rgba(0,0,0,0.55)"};
     ">
       <span style="font-size: ${isMine ? 24 : 20}px; line-height: 1;">${safeEmoji(post)}</span>
       ${
