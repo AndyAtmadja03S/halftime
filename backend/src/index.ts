@@ -14,9 +14,15 @@ import { authRouter } from "./routes/auth.js";
 import { friendsRouter } from "./routes/friends.js";
 import { meRouter } from "./routes/me.js";
 import { postsRouter } from "./routes/posts.js";
+import path from "path";
 
 const log = createLogger("server");
 const app = express();
+
+app.use(express.static('public'));
+app.get('*', (_req: Request, res: Response) => {
+  res.sendFile(path.join(process.cwd(), 'public', 'index.html'));
+});
 
 app.use((req: Request, _res: Response, next: NextFunction) => {
   if (req.path.startsWith("/api/")) {
