@@ -11,6 +11,7 @@ import { env } from "./lib/env.js";
 import { createLogger } from "./lib/log.js";
 import { feedRouter } from "./routes/feed.js";
 import { authRouter } from "./routes/auth.js";
+import { friendsRouter } from "./routes/friends.js";
 import { meRouter } from "./routes/me.js";
 import { postsRouter } from "./routes/posts.js";
 
@@ -38,6 +39,7 @@ app.get("/api/health", (_req: Request, res: Response) => {
 app.use("/api/auth", authRouter);
 app.use("/api/posts", postsRouter);
 app.use("/api/feed", feedRouter);
+app.use("/api/friends", friendsRouter);
 app.use("/api/me", meRouter);
 
 app.use((_req: Request, res: Response, _next: NextFunction) => {

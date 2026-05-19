@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchFeed, type Post } from "../lib/api";
+import {
+  fetchFeed,
+  votePost,
+  type FeedSort,
+  type Post,
+  type VoteValue,
+} from "../lib/api";
 import { SoundDetailModal } from "../components/SoundDetailModal";
 
 interface Props {
@@ -45,10 +51,25 @@ function formatRelativeTime(iso: string): string {
   return `${mo}MO`;
 }
 
-export function DiscoverScreen({ todaysPost }: Props) {
+function formatScore(score: number): string {
+  if (score === 0) return "0";
+  const abs = Math.abs(score);
+  if (abs < 1000) return String(score);
+  const k = (score / 1000).toFixed(1).replace(/\.0$/, "");
+  return `${k}K`;
+}
+
+const SORT_TABS: { value: FeedSort; label: string }[] = [
+  { value: "hot", label: "Hot" },
+  { value: "new", label: "New" },
+  { value: "top", label: "Top" },
+];
+
+export function DiscoverScreen({ todaysPost }: Readonly<Props>) {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [friendsOnly, setFriendsOnly] = useState(false);
+  const [sort, setSort] = useState<FeedSort>("hot");
 
   const [playingPostId, setPlayingPostId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -56,25 +77,27 @@ export function DiscoverScreen({ todaysPost }: Props) {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    fetchFeed({ limit: 50 })
+    fetchFeed({ limit: 50, friends: friendsOnly, sort })
       .then((res) => {
         if (alive) setPosts(res.posts);
       })
-      .catch(() => undefined)
+      .catch(() => {
+        if (alive) setPosts([]);
+      })
       .finally(() => {
         if (alive) setLoading(false);
       });
     return () => {
       alive = false;
     };
-  }, []);
+  }, [friendsOnly, sort]);
 
   useEffect(() => {
-    if (!todaysPost) return;
+    if (!todaysPost || friendsOnly) return;
     setPosts((prev) =>
       prev.some((p) => p.id === todaysPost.id) ? prev : [todaysPost, ...prev],
     );
-  }, [todaysPost]);
+  }, [todaysPost, friendsOnly]);
 
   useEffect(() => {
     return () => {
@@ -121,38 +144,91 @@ export function DiscoverScreen({ todaysPost }: Props) {
     }
   };
 
+  const handleVote = async (post: Post, direction: 1 | -1) => {
+    const next: VoteValue = post.my_vote === direction ? 0 : direction;
+    const delta = next - post.my_vote;
+    const optimistic: Post = {
+      ...post,
+      my_vote: next,
+      score: post.score + delta,
+      upvotes:
+        post.upvotes +
+        (next === 1 ? 1 : 0) -
+        (post.my_vote === 1 ? 1 : 0),
+      downvotes:
+        post.downvotes +
+        (next === -1 ? 1 : 0) -
+        (post.my_vote === -1 ? 1 : 0),
+    };
+    setPosts((prev) => prev.map((p) => (p.id === post.id ? optimistic : p)));
+    try {
+      const res = await votePost(post.id, next);
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === post.id
+            ? {
+                ...p,
+                upvotes: res.upvotes,
+                downvotes: res.downvotes,
+                score: res.score,
+                my_vote: res.my_vote,
+              }
+            : p,
+        ),
+      );
+    } catch (err) {
+      console.error("Vote failed:", err);
+      setPosts((prev) => prev.map((p) => (p.id === post.id ? post : p)));
+    }
+  };
+
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
 
-  const visiblePosts = friendsOnly
-    ? posts.filter((p) => p.is_mine)
-    : posts;
+  const visiblePosts = posts;
 
   return (
     <div className="relative flex h-full flex-col bg-black font-sans text-white antialiased overflow-x-hidden">
       <div className="flex gap-2 px-4 pt-3 pb-2">
-      <button
-        type="button"
-        onClick={() => setFriendsOnly(false)}
-        className={`rounded-full px-4 py-1.5 text-[12px] font-semibold tracking-wider uppercase transition-colors duration-200 ${
-          !friendsOnly
-            ? "bg-neutral-600 text-white"
-            : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200"
-        }`}
-      >
-        Everyone
-      </button>
-      <button
-        type="button"
-        onClick={() => setFriendsOnly(true)}
-        className={`rounded-full px-4 py-1.5 text-[12px] font-semibold tracking-wider uppercase transition-colors duration-200 ${
-          friendsOnly
-            ? "bg-neutral-600 text-white"
-            : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200"
-        }`}
-      >
-        Friends
-      </button>
-    </div>
+        <button
+          type="button"
+          onClick={() => setFriendsOnly(false)}
+          className={`rounded-full px-4 py-1.5 text-[12px] font-semibold tracking-wider uppercase transition-colors duration-200 ${
+            !friendsOnly
+              ? "bg-neutral-600 text-white"
+              : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200"
+          }`}
+        >
+          Everyone
+        </button>
+        <button
+          type="button"
+          onClick={() => setFriendsOnly(true)}
+          className={`rounded-full px-4 py-1.5 text-[12px] font-semibold tracking-wider uppercase transition-colors duration-200 ${
+            friendsOnly
+              ? "bg-neutral-600 text-white"
+              : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200"
+          }`}
+        >
+          Friends
+        </button>
+      </div>
+
+      <div className="flex gap-1 px-4 pb-2">
+        {SORT_TABS.map((tab) => (
+          <button
+            key={tab.value}
+            type="button"
+            onClick={() => setSort(tab.value)}
+            className={`rounded-full px-3 py-1 text-[11px] font-semibold tracking-wider uppercase transition-colors duration-200 ${
+              sort === tab.value
+                ? "bg-white/10 text-white"
+                : "text-neutral-500 hover:text-neutral-300"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
       <div className="flex-1 space-y-[11px] overflow-y-auto overflow-x-hidden px-4 pt-1 pb-8">
         {loading ? (
@@ -173,76 +249,175 @@ export function DiscoverScreen({ todaysPost }: Props) {
           visiblePosts.map((post, index) => {
             const isCurrentlyPlaying = playingPostId === post.id;
             const canPlay = post.audio_url !== null;
-            const accountLabel = post.is_mine
-              ? `You · ${post.description}`
-              : post.description;
+            const scoreColor =
+              post.score > 0
+                ? "text-emerald-400"
+                : post.score < 0
+                  ? "text-rose-400"
+                  : "text-neutral-400";
 
             return (
               <div
                 key={post.id}
                 onClick={() => setSelectedPost(post)}
-                className="relative flex min-h-[92px] rounded-[24px] bg-[#121212] p-4 cursor-pointer transition-all duration-200 hover:bg-[#1a1a1a] active:scale-[0.98]"
+                className="relative flex rounded-2xl bg-[#111] cursor-pointer transition-all duration-200 hover:bg-[#191919] active:scale-[0.98]"
               >
-                <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden text-[34px] leading-none select-none">
-                  <span aria-hidden>{safeEmoji(post)}</span>
-                </div>
+                <div className="flex flex-1 gap-3 px-4 py-3.5 min-w-0">
+                  {/* Emoji bubble */}
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/[0.04] text-[24px] leading-none select-none">
+                    <span aria-hidden>{safeEmoji(post)}</span>
+                  </div>
 
-                <div className="flex flex-1 flex-col justify-center pr-6 pl-4">
-                  <h3 className="truncate text-[15px] font-normal tracking-wide text-[#f3f3f3]">
-                    {accountLabel}
-                  </h3>
+                  <div className="flex flex-1 flex-col min-w-0 gap-[6px]">
+                    {/* Description + meta row */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-[14px] font-medium leading-snug text-[#f0f0f0]">
+                          {post.description}
+                        </p>
+                        <p className="mt-0.5 text-[11px] tracking-wider text-[#4a4a4e] uppercase">
+                          {post.is_mine
+                            ? "you"
+                            : post.handle
+                              ? `@${post.handle}`
+                              : "anon"}
+                          <span className="mx-1">·</span>
+                          {formatCategory(post.category)}
+                          <span className="mx-1">·</span>
+                          {formatRelativeTime(post.created_at)}
+                        </p>
+                      </div>
 
-                  <div className="mt-[7px] flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handlePlaySound(post.id, post.audio_url);
-                      }}
-                      disabled={!canPlay}
-                      className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-neutral-800 text-white transition duration-150 hover:bg-neutral-700 active:scale-95 focus:outline-none disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-neutral-800"
-                      aria-label={
-                        !canPlay
-                          ? "Audio unavailable"
-                          : isCurrentlyPlaying
-                            ? "Pause sound"
-                            : "Play sound"
-                      }
-                    >
-                      {isCurrentlyPlaying ? (
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          strokeWidth={3}
-                          stroke="currentColor"
-                          className="h-3 w-3"
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        {post.comment_count > 0 && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedPost(post);
+                            }}
+                            className="flex items-center gap-1 rounded-full bg-white/[0.04] px-2 py-1 text-[11px] text-neutral-400 transition-colors hover:text-neutral-200"
+                            aria-label={`${post.comment_count} comments`}
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              fill="currentColor"
+                              className="h-3 w-3"
+                            >
+                              <path d="M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2z" />
+                            </svg>
+                            <span className="tabular-nums">
+                              {post.comment_count}
+                            </span>
+                          </button>
+                        )}
+
+                      {/* Vote stack */}
+                      <div
+                        className="flex items-center gap-1 rounded-full bg-white/[0.04] px-1.5 py-0.5"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleVote(post, 1)}
+                          aria-label="Upvote"
+                          aria-pressed={post.my_vote === 1}
+                          className={`grid h-6 w-6 place-items-center rounded-full transition-colors duration-150 ${
+                            post.my_vote === 1
+                              ? "text-emerald-400"
+                              : "text-neutral-500 hover:text-emerald-300"
+                          }`}
                         >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M15.75 5.25v13.5m-7.5-13.5v13.5"
-                          />
-                        </svg>
-                      ) : (
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          fill="currentColor"
-                          viewBox="0 0 24 24"
-                          className="ml-0.5 h-3 w-3"
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            className="h-3.5 w-3.5"
+                          >
+                            <path d="M12 4l8 9h-5v7H9v-7H4l8-9z" />
+                          </svg>
+                        </button>
+                        <span
+                          className={`min-w-[18px] text-center text-[11px] font-semibold tabular-nums ${scoreColor}`}
                         >
-                          <path
-                            fillRule="evenodd"
-                            d="M4.5 5.653c0-1.427 1.529-2.33 2.779-1.643l11.54 6.347c1.295.712 1.295 2.573 0 3.286L7.28 19.99c-1.25.687-2.779-.217-2.779-1.643V5.653Z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                      )}
-                    </button>
+                          {formatScore(post.score)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleVote(post, -1)}
+                          aria-label="Downvote"
+                          aria-pressed={post.my_vote === -1}
+                          className={`grid h-6 w-6 place-items-center rounded-full transition-colors duration-150 ${
+                            post.my_vote === -1
+                              ? "text-rose-400"
+                              : "text-neutral-500 hover:text-rose-300"
+                          }`}
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            className="h-3.5 w-3.5"
+                          >
+                            <path d="M12 20l-8-9h5V4h6v7h5l-8 9z" />
+                          </svg>
+                        </button>
+                      </div>
+                      </div>
+                    </div>
 
-                    <div className="flex min-w-0 flex-1 items-center gap-2">
-                      <div className="flex h-[18px] min-w-0 flex-1 items-center gap-[2.5px] overflow-hidden">
-                        {Array.from({ length: 16 }).map((_, i) => {
+                    {/* Waveform row */}
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePlaySound(post.id, post.audio_url);
+                        }}
+                        disabled={!canPlay}
+                        className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full bg-white/[0.07] text-white transition duration-150 hover:bg-white/[0.12] active:scale-95 focus:outline-none disabled:cursor-not-allowed disabled:opacity-30"
+                        aria-label={
+                          !canPlay
+                            ? "Audio unavailable"
+                            : isCurrentlyPlaying
+                              ? "Pause sound"
+                              : "Play sound"
+                        }
+                      >
+                        {isCurrentlyPlaying ? (
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            strokeWidth={3}
+                            stroke="currentColor"
+                            className="h-3 w-3"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M15.75 5.25v13.5m-7.5-13.5v13.5"
+                            />
+                          </svg>
+                        ) : (
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="currentColor"
+                            viewBox="0 0 24 24"
+                            className="ml-0.5 h-3 w-3"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M4.5 5.653c0-1.427 1.529-2.33 2.779-1.643l11.54 6.347c1.295.712 1.295 2.573 0 3.286L7.28 19.99c-1.25.687-2.779-.217-2.779-1.643V5.653Z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                        )}
+                      </button>
+
+                      <div className="flex flex-1 h-[16px] items-center gap-[2.5px] overflow-hidden">
+                        {Array.from({ length: 24 }).map((_, i) => {
                           const waveSeed =
                             (((index + 1) * (i + 3) * 7) % 9) + 3;
                           return (
@@ -252,39 +427,18 @@ export function DiscoverScreen({ todaysPost }: Props) {
                                 height: `${waveSeed * 1.5}px`,
                                 animationDelay: `${i * 0.04}s`,
                               }}
-                              className={`w-[2px] flex-shrink-0 rounded-full transition-all duration-300 ${
+                              className={`w-[2px] shrink-0 rounded-full transition-all duration-300 ${
                                 isCurrentlyPlaying
-                                  ? "animate-[pulse_0.6s_infinite_alternate] bg-white opacity-100"
-                                  : "bg-[#9a9a9f] opacity-90"
+                                  ? "animate-[pulse_0.6s_infinite_alternate] bg-white opacity-90"
+                                  : "bg-white/20"
                               }`}
                             />
                           );
                         })}
                       </div>
-                      <div className="shrink-0 text-[11px] font-bold tracking-wider whitespace-nowrap text-[#636366] uppercase">
-                        <span>{formatCategory(post.category)}</span>
-                        <span className="mx-1">•</span>
-                        <span>{formatRelativeTime(post.created_at)}</span>
-                      </div>
                     </div>
                   </div>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={(e) => e.stopPropagation()}
-                  className="absolute top-1/2 right-[18px] -translate-y-1/2 p-1 text-[#545456] transition-colors duration-200 hover:text-white"
-                  aria-label="More options"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    className="h-[18px] w-[18px]"
-                  >
-                    <path d="M12 10.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Zm7 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Zm-14 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Z" />
-                  </svg>
-                </button>
               </div>
             );
           })
@@ -295,6 +449,23 @@ export function DiscoverScreen({ todaysPost }: Props) {
         post={selectedPost}
         isOpen={!!selectedPost}
         onClose={() => setSelectedPost(null)}
+        onCommentCountChange={(postId, delta) => {
+          setPosts((prev) =>
+            prev.map((p) =>
+              p.id === postId
+                ? { ...p, comment_count: Math.max(p.comment_count + delta, 0) }
+                : p,
+            ),
+          );
+          setSelectedPost((cur) =>
+            cur && cur.id === postId
+              ? {
+                  ...cur,
+                  comment_count: Math.max(cur.comment_count + delta, 0),
+                }
+              : cur,
+          );
+        }}
       />
     </div>
   );

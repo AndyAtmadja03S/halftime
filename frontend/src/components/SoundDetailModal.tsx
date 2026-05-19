@@ -1,19 +1,64 @@
 import { AnimatePresence, motion } from "framer-motion";
+import { useEffect, useState } from "react";
+import { CommentsSection } from "./CommentsSection";
 import { Waveform } from "./Waveform";
 import { colorFor } from "../lib/categoryColor";
 import { relativeTime } from "../lib/relativeTime";
+import { reverseGeocode } from "../lib/reverseGeocode";
 import type { Post } from "../lib/api";
 
 interface Props {
   post: Post | null;
   isOpen: boolean;
   onClose: () => void;
+  onCommentCountChange?: (postId: string, delta: number) => void;
 }
 
-export function SoundDetailModal({ post, isOpen, onClose }: Props) {
+export function SoundDetailModal({
+  post,
+  isOpen,
+  onClose,
+  onCommentCountChange,
+}: Readonly<Props>) {
   if (!post) return null;
 
   const accent = colorFor(post.category);
+
+  return (
+    <SoundDetailModalInner
+      post={post}
+      isOpen={isOpen}
+      onClose={onClose}
+      accent={accent}
+      onCommentCountChange={onCommentCountChange}
+    />
+  );
+}
+
+function SoundDetailModalInner({
+  post,
+  isOpen,
+  onClose,
+  accent,
+  onCommentCountChange,
+}: {
+  post: Post;
+  isOpen: boolean;
+  onClose: () => void;
+  accent: string;
+  onCommentCountChange?: (postId: string, delta: number) => void;
+}) {
+  const [locationLabel, setLocationLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!post.latitude || !post.longitude) return;
+    setLocationLabel(null);
+    let cancelled = false;
+    reverseGeocode(post.latitude, post.longitude).then((label) => {
+      if (!cancelled) setLocationLabel(label);
+    });
+    return () => { cancelled = true; };
+  }, [post.latitude, post.longitude]);
 
   return (
     <AnimatePresence>
@@ -35,8 +80,9 @@ export function SoundDetailModal({ post, isOpen, onClose }: Props) {
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             transition={{ duration: 0.3, ease: "easeOut" }}
             onClick={(e) => e.stopPropagation()}
-            className="fixed inset-4 z-50 flex flex-col gap-6 rounded-3xl border border-white/10 bg-gradient-to-b from-ink-100 to-ink-0 p-6 shadow-2xl md:inset-auto md:left-1/2 md:top-1/2 md:w-full md:max-w-sm md:-translate-x-1/2 md:-translate-y-1/2"
+            className="fixed inset-4 z-50 flex flex-col overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-ink-100 to-ink-0 shadow-2xl md:inset-auto md:left-1/2 md:top-1/2 md:w-full md:max-w-sm md:max-h-[90vh] md:-translate-x-1/2 md:-translate-y-1/2"
           >
+            <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-6">
             {/* Header with emoji background */}
             <div
               className="relative -mx-6 -mt-6 flex flex-col items-center justify-center gap-4 rounded-t-3xl px-6 py-12"
@@ -74,6 +120,14 @@ export function SoundDetailModal({ post, isOpen, onClose }: Props) {
                   {(post.duration_ms / 1000).toFixed(1)}s
                 </p>
               </div>
+              {(post.handle || post.is_mine) && (
+                <div className="text-center">
+                  <p className="text-mist-300">Posted by</p>
+                  <p className="text-mist-500 font-semibold">
+                    {post.is_mine ? "you" : `@${post.handle}`}
+                  </p>
+                </div>
+              )}
               <div className="text-right">
                 <p className="text-mist-300">Captured</p>
                 <p className="text-mist-500 font-semibold">
@@ -98,11 +152,19 @@ export function SoundDetailModal({ post, isOpen, onClose }: Props) {
             {post.latitude && post.longitude && (
               <div className="rounded-lg border border-white/5 bg-white/[0.03] px-4 py-3 text-xs">
                 <p className="text-mist-300">Location</p>
-                <p className="mt-1 text-mist-500 font-mono text-[11px]">
-                  {post.latitude.toFixed(4)}° N, {post.longitude.toFixed(4)}° W
+                <p className="mt-1 text-mist-500 text-[11px]">
+                  {locationLabel ?? "Locating…"}
                 </p>
               </div>
             )}
+
+            {/* Comments */}
+            <CommentsSection
+              postId={post.id}
+              onCountChange={(delta) =>
+                onCommentCountChange?.(post.id, delta)
+              }
+            />
 
             {/* Close button */}
             <button
@@ -111,6 +173,7 @@ export function SoundDetailModal({ post, isOpen, onClose }: Props) {
             >
               Close
             </button>
+            </div>
           </motion.div>
         </>
       )}

@@ -1,6 +1,10 @@
 import { getDeviceHour, getDeviceId } from "./deviceId";
 import { getSessionToken, type AuthUser } from "./auth";
 
+export type VoteValue = -1 | 0 | 1;
+
+export type FeedSort = "hot" | "new" | "top";
+
 export interface Post {
   id: string;
   emoji: string;
@@ -11,6 +15,28 @@ export interface Post {
   audio_url: string | null;
   latitude: number | null;
   longitude: number | null;
+  is_mine: boolean;
+  handle: string | null;
+  upvotes: number;
+  downvotes: number;
+  score: number;
+  my_vote: VoteValue;
+  comment_count: number;
+}
+
+export interface VoteResponse {
+  upvotes: number;
+  downvotes: number;
+  score: number;
+  my_vote: VoteValue;
+}
+
+export interface Comment {
+  id: string;
+  body: string;
+  is_anonymous: boolean;
+  created_at: string;
+  handle: string | null;
   is_mine: boolean;
 }
 
@@ -36,6 +62,12 @@ export interface FeedResponse {
 export interface AuthResponse {
   token: string;
   user: AuthUser;
+}
+
+export interface FriendUser {
+  id: string;
+  username: string;
+  displayName: string;
 }
 
 function baseHeaders(): HeadersInit {
@@ -114,15 +146,70 @@ export async function fetchFeed(params: {
   before?: string;
   limit?: number;
   mine?: boolean;
+  friends?: boolean;
+  sort?: FeedSort;
+  offset?: number;
 } = {}): Promise<FeedResponse> {
   const qs = new URLSearchParams();
   if (params.before) qs.set("before", params.before);
   if (params.limit) qs.set("limit", String(params.limit));
   if (params.mine) qs.set("mine", "1");
+  if (params.friends) qs.set("friends", "1");
+  if (params.sort) qs.set("sort", params.sort);
+  if (params.offset) qs.set("offset", String(params.offset));
   const res = await fetch(`/api/feed?${qs.toString()}`, {
     headers: authHeaders(),
   });
   return handle<FeedResponse>(res);
+}
+
+export async function votePost(
+  postId: string,
+  value: VoteValue,
+): Promise<VoteResponse> {
+  const res = await fetch(`/api/posts/${encodeURIComponent(postId)}/vote`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ value }),
+  });
+  return handle<VoteResponse>(res);
+}
+
+export async function fetchComments(
+  postId: string,
+): Promise<{ comments: Comment[] }> {
+  const res = await fetch(
+    `/api/posts/${encodeURIComponent(postId)}/comments`,
+    { headers: authHeaders() },
+  );
+  return handle(res);
+}
+
+export async function createComment(
+  postId: string,
+  body: string,
+  anonymous: boolean,
+): Promise<{ comment: Comment }> {
+  const res = await fetch(
+    `/api/posts/${encodeURIComponent(postId)}/comments`,
+    {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ body, anonymous }),
+    },
+  );
+  return handle(res);
+}
+
+export async function deleteComment(
+  postId: string,
+  commentId: string,
+): Promise<void> {
+  const res = await fetch(
+    `/api/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}`,
+    { method: "DELETE", headers: authHeaders() },
+  );
+  await handle(res);
 }
 
 export async function fetchTodayStatus(): Promise<{ hasPostedToday: boolean }> {
@@ -135,6 +222,7 @@ export interface UploadOptions {
   rms?: number;
   latitude?: number;
   longitude?: number;
+  anonymous?: boolean;
 }
 
 export async function uploadPost(
@@ -151,6 +239,13 @@ export async function uploadPost(
   if (opts.longitude !== undefined)
     form.append("longitude", String(opts.longitude));
 
+  // Anonymous posts use a one-time random device ID so the post isn't
+  // linked to the user's persistent profile. Non-anonymous uploads must
+  // include the session token — the backend requires auth on POST /api/posts.
+  const headers: HeadersInit = opts.anonymous
+    ? { "x-device-id": crypto.randomUUID(), "x-device-hour": String(getDeviceHour()) }
+    : authHeaders();
+
   console.info("[voice] upload → start", {
     bytes: blob.size,
     mime: blob.type,
@@ -164,7 +259,7 @@ export async function uploadPost(
   try {
     const res = await fetch(`/api/posts`, {
       method: "POST",
-      headers: authHeaders(),
+      headers,
       body: form,
       signal: controller.signal,
     });
@@ -184,4 +279,49 @@ export async function uploadPost(
 export async function fetchStats(): Promise<MeStats> {
   const res = await fetch(`/api/me/stats`, { headers: authHeaders() });
   return handle<MeStats>(res);
+}
+
+export async function fetchFriends(): Promise<{ friends: FriendUser[] }> {
+  const res = await fetch(`/api/friends`, { headers: authHeaders() });
+  return handle(res);
+}
+
+export async function fetchFriendRequests(): Promise<{ incoming: FriendUser[] }> {
+  const res = await fetch(`/api/friends/requests`, { headers: authHeaders() });
+  return handle(res);
+}
+
+export async function sendFriendRequest(
+  code: string,
+): Promise<{ status: "pending" | "accepted" }> {
+  const res = await fetch(`/api/friends/requests`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  return handle(res);
+}
+
+export async function acceptFriendRequest(userId: string): Promise<void> {
+  const res = await fetch(`/api/friends/requests/${userId}/accept`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  await handle(res);
+}
+
+export async function declineFriendRequest(userId: string): Promise<void> {
+  const res = await fetch(`/api/friends/requests/${userId}/decline`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  await handle(res);
+}
+
+export async function removeFriend(userId: string): Promise<void> {
+  const res = await fetch(`/api/friends/${userId}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  await handle(res);
 }

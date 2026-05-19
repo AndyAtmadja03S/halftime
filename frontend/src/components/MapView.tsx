@@ -296,7 +296,11 @@ export function MapView({ posts, fallbackCenter = DEFAULT_CENTER }: Props) {
                     {selectedPost.category.replace(/_/g, " ")}
                     {" · "}
                     {relativeTime(selectedPost.created_at)}
-                    {selectedPost.is_mine ? " · yours" : ""}
+                    {selectedPost.is_mine
+                      ? " · yours"
+                      : selectedPost.handle
+                        ? ` · @${selectedPost.handle}`
+                        : ""}
                   </p>
                 </div>
               </div>

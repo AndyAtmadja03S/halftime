@@ -1,9 +1,17 @@
 import { motion } from "framer-motion";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AddFriendSheet } from "../components/AddFriendSheet";
 import { AuthModal } from "../components/AuthModal";
 import { MemoriesCalendar } from "../components/MemoriesCalendar";
-import { fetchStats, type MeStats } from "../lib/api";
-import { getStoredUser, isLoggedIn } from "../lib/auth";
+import {
+  acceptFriendRequest,
+  declineFriendRequest,
+  fetchFriendRequests,
+  fetchStats,
+  type FriendUser,
+  type MeStats,
+} from "../lib/api";
+import { getStoredUser } from "../lib/auth";
 
 function monthOffset(year: number, monthIndex: number, delta: number) {
   const d = new Date(Date.UTC(year, monthIndex + delta, 1));
@@ -12,7 +20,7 @@ function monthOffset(year: number, monthIndex: number, delta: number) {
 
 function formatMonthShort(year: number, monthIndex: number): string {
   const d = new Date(Date.UTC(year, monthIndex, 1));
-  return d.toLocaleString(undefined, { month: "short", year: "2-digit" });
+  return d.toLocaleString(undefined, { month: "short", year: "numeric" });
 }
 
 function currentMonthView() {
@@ -20,18 +28,42 @@ function currentMonthView() {
   return { year: now.getUTCFullYear(), monthIndex: now.getUTCMonth() };
 }
 
-export function ProfileScreen() {
-  const [authed, setAuthed] = useState(isLoggedIn());
+function formatFriendCode(raw: string | null | undefined): string {
+  if (!raw) return "";
+  const stripped = raw.replace(/-/g, "").toUpperCase();
+  if (stripped.length !== 8) return stripped;
+  return `${stripped.slice(0, 4)}-${stripped.slice(4)}`;
+}
+
+interface Props {
+  authed: boolean;
+  onAuthChange: (v: boolean) => void;
+}
+
+export function ProfileScreen({ authed, onAuthChange }: Props) {
   const storedUser = getStoredUser();
+  const friendCode = storedUser?.friendCode ?? null;
+
   const [stats, setStats] = useState<MeStats | null>(null);
   const [loading, setLoading] = useState(authed);
   const [authOpen, setAuthOpen] = useState(false);
   const [view, setView] = useState(currentMonthView);
+  const [addOpen, setAddOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [incoming, setIncoming] = useState<FriendUser[]>([]);
+  const [pendingAction, setPendingAction] = useState<Set<string>>(new Set());
+
+  const refreshRequests = useCallback(() => {
+    fetchFriendRequests()
+      .then((r) => setIncoming(r.incoming))
+      .catch(() => setIncoming([]));
+  }, []);
 
   useEffect(() => {
     if (!authed) {
       setLoading(false);
       setStats(null);
+      setIncoming([]);
       return;
     }
     setLoading(true);
@@ -39,7 +71,8 @@ export function ProfileScreen() {
       .then(setStats)
       .catch(() => setStats(null))
       .finally(() => setLoading(false));
-  }, [authed]);
+    refreshRequests();
+  }, [authed, refreshRequests]);
 
   const latestView = useMemo(() => {
     if (stats?.firstActive) {
@@ -62,19 +95,47 @@ export function ProfileScreen() {
   const hasPrev = useMemo(() => {
     if (!firstMonth) return false;
     const viewStart = new Date(Date.UTC(view.year, view.monthIndex, 1));
-    const firstStart = new Date(
-      Date.UTC(firstMonth.year, firstMonth.monthIndex, 1),
-    );
+    const firstStart = new Date(Date.UTC(firstMonth.year, firstMonth.monthIndex, 1));
     return viewStart > firstStart;
   }, [view, firstMonth]);
 
   const hasNext = useMemo(() => {
     const viewStart = new Date(Date.UTC(view.year, view.monthIndex, 1));
-    const latestStart = new Date(
-      Date.UTC(latestView.year, latestView.monthIndex, 1),
-    );
+    const latestStart = new Date(Date.UTC(latestView.year, latestView.monthIndex, 1));
     return viewStart < latestStart;
   }, [view, latestView]);
+
+  const copyCode = async () => {
+    if (!friendCode) return;
+    try {
+      await navigator.clipboard.writeText(friendCode);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch {
+      // clipboard blocked; silently ignore
+    }
+  };
+
+  const respondToRequest = async (
+    userId: string,
+    action: "accept" | "decline",
+  ) => {
+    setPendingAction((s) => new Set(s).add(userId));
+    const previous = incoming;
+    setIncoming((rows) => rows.filter((r) => r.id !== userId));
+    try {
+      if (action === "accept") await acceptFriendRequest(userId);
+      else await declineFriendRequest(userId);
+    } catch {
+      setIncoming(previous);
+    } finally {
+      setPendingAction((s) => {
+        const next = new Set(s);
+        next.delete(userId);
+        return next;
+      });
+    }
+  };
 
   if (!authed) {
     return (
@@ -98,10 +159,11 @@ export function ProfileScreen() {
           onClose={() => setAuthOpen(false)}
           onSuccess={() => {
             setAuthOpen(false);
-            setAuthed(true);
+            onAuthChange(true);
           }}
           title="Sign in to your account"
           subtitle="Use the username and password you created when you first posted."
+          defaultMode="login"
         />
       </div>
     );
@@ -131,13 +193,7 @@ export function ProfileScreen() {
           className="text-right"
         >
           <p className="flex items-center justify-end gap-1.5 text-2xl font-semibold text-mist-500">
-            <svg
-              width="16"
-              height="20"
-              viewBox="0 0 16 20"
-              fill="none"
-              aria-hidden
-            >
+            <svg width="16" height="20" viewBox="0 0 16 20" fill="none" aria-hidden>
               <path
                 d="M9 1L1 11h6l-1 8 8-10H8l1-8z"
                 fill="var(--color-accent-streak)"
@@ -153,6 +209,118 @@ export function ProfileScreen() {
           </p>
         </motion.div>
       </section>
+
+      <section className="rounded-2xl border border-line-200 bg-ink-200 p-4">
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] tracking-[var(--tracking-chrome)] text-mist-100 uppercase">
+            Your Code
+          </p>
+          {copied && (
+            <motion.span
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="text-[10px] tracking-[var(--tracking-chrome)] text-mist-400 uppercase"
+            >
+              Copied
+            </motion.span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={copyCode}
+          disabled={!friendCode}
+          aria-label="Copy friend code"
+          className="mt-2 flex w-full items-center justify-between gap-3 font-mono text-2xl tracking-[0.25em] text-mist-500 transition hover:opacity-80 disabled:opacity-60"
+        >
+          <span>{friendCode ? formatFriendCode(friendCode) : "Generating…"}</span>
+          {friendCode &&
+            (copied ? (
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-5 w-5 shrink-0 text-emerald-400"
+                aria-hidden
+              >
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            ) : (
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.6}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-5 w-5 shrink-0 text-mist-300"
+                aria-hidden
+              >
+                <rect x="9" y="9" width="12" height="12" rx="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            ))}
+        </button>
+        <button
+          type="button"
+          onClick={() => setAddOpen(true)}
+          className="mt-4 w-full rounded-lg border border-line-200 px-4 py-2.5 text-xs font-medium tracking-[var(--tracking-chrome)] text-mist-300 uppercase transition hover:bg-white/[0.04]"
+        >
+          Add a friend
+        </button>
+      </section>
+
+      {incoming.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <p className="text-[10px] tracking-[var(--tracking-chrome)] text-mist-100 uppercase">
+            Pending Requests
+          </p>
+          <ul className="flex flex-col gap-2">
+            {incoming.map((u) => {
+              const busy = pendingAction.has(u.id);
+              return (
+                <li
+                  key={u.id}
+                  className="flex items-center justify-between rounded-xl border border-line-200 bg-ink-200 px-4 py-3"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm text-mist-500">
+                      {u.displayName}
+                    </p>
+                    <p className="truncate text-[10px] tracking-[var(--tracking-chrome)] text-mist-100 uppercase">
+                      @{u.username}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void respondToRequest(u.id, "decline")}
+                      className="rounded-full border border-line-200 px-3 py-1.5 text-[11px] font-medium tracking-[var(--tracking-chrome)] text-mist-200 uppercase transition hover:bg-white/[0.04] disabled:opacity-50"
+                    >
+                      Decline
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void respondToRequest(u.id, "accept")}
+                      style={{ color: "var(--color-ink-300)" }}
+                      className="rounded-full border border-mist-500 bg-mist-500 px-3 py-1.5 text-[11px] font-medium tracking-[var(--tracking-chrome)] uppercase transition disabled:opacity-50"
+                    >
+                      Accept
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       <section className="grid grid-cols-2 gap-3">
         <StatCard label="Total Captures" value={String(stats.totalCaptures)} />
@@ -170,6 +338,12 @@ export function ProfileScreen() {
         hasNext={hasNext}
         onPrev={() => setView(monthOffset(view.year, view.monthIndex, -1))}
         onNext={() => setView(monthOffset(view.year, view.monthIndex, +1))}
+      />
+
+      <AddFriendSheet
+        isOpen={addOpen}
+        onClose={() => setAddOpen(false)}
+        onSuccess={refreshRequests}
       />
     </div>
   );
