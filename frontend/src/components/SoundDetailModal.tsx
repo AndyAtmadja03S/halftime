@@ -97,6 +97,14 @@ function SoundDetailModalInner({
                   {(post.duration_ms / 1000).toFixed(1)}s
                 </p>
               </div>
+              {(post.handle || post.is_mine) && (
+                <div className="text-center">
+                  <p className="text-mist-300">Posted by</p>
+                  <p className="text-mist-500 font-semibold">
+                    {post.is_mine ? "you" : `@${post.handle}`}
+                  </p>
+                </div>
+              )}
               <div className="text-right">
                 <p className="text-mist-300">Captured</p>
                 <p className="text-mist-500 font-semibold">

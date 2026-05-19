@@ -173,76 +173,107 @@ export function DiscoverScreen({ todaysPost }: Props) {
           visiblePosts.map((post, index) => {
             const isCurrentlyPlaying = playingPostId === post.id;
             const canPlay = post.audio_url !== null;
-            const accountLabel = post.is_mine
-              ? `You · ${post.description}`
-              : post.description;
 
             return (
               <div
                 key={post.id}
                 onClick={() => setSelectedPost(post)}
-                className="relative flex min-h-[92px] rounded-[24px] bg-[#121212] p-4 cursor-pointer transition-all duration-200 hover:bg-[#1a1a1a] active:scale-[0.98]"
+                className="relative flex rounded-2xl bg-[#111] cursor-pointer transition-all duration-200 hover:bg-[#191919] active:scale-[0.98]"
               >
-                <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden text-[34px] leading-none select-none">
-                  <span aria-hidden>{safeEmoji(post)}</span>
-                </div>
 
-                <div className="flex flex-1 flex-col justify-center pr-6 pl-4">
-                  <h3 className="truncate text-[15px] font-normal tracking-wide text-[#f3f3f3]">
-                    {accountLabel}
-                  </h3>
+                <div className="flex flex-1 gap-3 px-4 py-3.5 min-w-0">
+                  {/* Emoji bubble */}
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/[0.04] text-[24px] leading-none select-none">
+                    <span aria-hidden>{safeEmoji(post)}</span>
+                  </div>
 
-                  <div className="mt-[7px] flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handlePlaySound(post.id, post.audio_url);
-                      }}
-                      disabled={!canPlay}
-                      className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-neutral-800 text-white transition duration-150 hover:bg-neutral-700 active:scale-95 focus:outline-none disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-neutral-800"
-                      aria-label={
-                        !canPlay
-                          ? "Audio unavailable"
-                          : isCurrentlyPlaying
-                            ? "Pause sound"
-                            : "Play sound"
-                      }
-                    >
-                      {isCurrentlyPlaying ? (
+                  <div className="flex flex-1 flex-col min-w-0 gap-[6px]">
+                    {/* Description + meta row */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-[14px] font-medium leading-snug text-[#f0f0f0]">
+                          {post.description}
+                        </p>
+                        <p className="mt-0.5 text-[11px] tracking-wider text-[#4a4a4e] uppercase">
+                          {post.is_mine
+                            ? "you"
+                            : post.handle
+                              ? `@${post.handle}`
+                              : "anon"}
+                          <span className="mx-1">·</span>
+                          {formatCategory(post.category)}
+                          <span className="mx-1">·</span>
+                          {formatRelativeTime(post.created_at)}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => e.stopPropagation()}
+                        className="shrink-0 p-1 text-[#444] transition-colors duration-200 hover:text-white"
+                        aria-label="More options"
+                      >
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
-                          fill="none"
                           viewBox="0 0 24 24"
-                          strokeWidth={3}
-                          stroke="currentColor"
-                          className="h-3 w-3"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M15.75 5.25v13.5m-7.5-13.5v13.5"
-                          />
-                        </svg>
-                      ) : (
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
                           fill="currentColor"
-                          viewBox="0 0 24 24"
-                          className="ml-0.5 h-3 w-3"
+                          className="h-4 w-4"
                         >
-                          <path
-                            fillRule="evenodd"
-                            d="M4.5 5.653c0-1.427 1.529-2.33 2.779-1.643l11.54 6.347c1.295.712 1.295 2.573 0 3.286L7.28 19.99c-1.25.687-2.779-.217-2.779-1.643V5.653Z"
-                            clipRule="evenodd"
-                          />
+                          <path d="M12 10.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Zm7 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Zm-14 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Z" />
                         </svg>
-                      )}
-                    </button>
+                      </button>
+                    </div>
 
-                    <div className="flex min-w-0 flex-1 items-center gap-2">
-                      <div className="flex h-[18px] min-w-0 flex-1 items-center gap-[2.5px] overflow-hidden">
-                        {Array.from({ length: 16 }).map((_, i) => {
+                    {/* Waveform row */}
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePlaySound(post.id, post.audio_url);
+                        }}
+                        disabled={!canPlay}
+                        className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full bg-white/[0.07] text-white transition duration-150 hover:bg-white/[0.12] active:scale-95 focus:outline-none disabled:cursor-not-allowed disabled:opacity-30"
+                        aria-label={
+                          !canPlay
+                            ? "Audio unavailable"
+                            : isCurrentlyPlaying
+                              ? "Pause sound"
+                              : "Play sound"
+                        }
+                      >
+                        {isCurrentlyPlaying ? (
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            strokeWidth={3}
+                            stroke="currentColor"
+                            className="h-3 w-3"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M15.75 5.25v13.5m-7.5-13.5v13.5"
+                            />
+                          </svg>
+                        ) : (
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="currentColor"
+                            viewBox="0 0 24 24"
+                            className="ml-0.5 h-3 w-3"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M4.5 5.653c0-1.427 1.529-2.33 2.779-1.643l11.54 6.347c1.295.712 1.295 2.573 0 3.286L7.28 19.99c-1.25.687-2.779-.217-2.779-1.643V5.653Z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                        )}
+                      </button>
+
+                      <div className="flex flex-1 h-[16px] items-center gap-[2.5px] overflow-hidden">
+                        {Array.from({ length: 24 }).map((_, i) => {
                           const waveSeed =
                             (((index + 1) * (i + 3) * 7) % 9) + 3;
                           return (
@@ -252,39 +283,18 @@ export function DiscoverScreen({ todaysPost }: Props) {
                                 height: `${waveSeed * 1.5}px`,
                                 animationDelay: `${i * 0.04}s`,
                               }}
-                              className={`w-[2px] flex-shrink-0 rounded-full transition-all duration-300 ${
+                              className={`w-[2px] shrink-0 rounded-full transition-all duration-300 ${
                                 isCurrentlyPlaying
-                                  ? "animate-[pulse_0.6s_infinite_alternate] bg-white opacity-100"
-                                  : "bg-[#9a9a9f] opacity-90"
+                                  ? "animate-[pulse_0.6s_infinite_alternate] bg-white opacity-90"
+                                  : "bg-white/20"
                               }`}
                             />
                           );
                         })}
                       </div>
-                      <div className="shrink-0 text-[11px] font-bold tracking-wider whitespace-nowrap text-[#636366] uppercase">
-                        <span>{formatCategory(post.category)}</span>
-                        <span className="mx-1">•</span>
-                        <span>{formatRelativeTime(post.created_at)}</span>
-                      </div>
                     </div>
                   </div>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={(e) => e.stopPropagation()}
-                  className="absolute top-1/2 right-[18px] -translate-y-1/2 p-1 text-[#545456] transition-colors duration-200 hover:text-white"
-                  aria-label="More options"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    className="h-[18px] w-[18px]"
-                  >
-                    <path d="M12 10.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Zm7 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Zm-14 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Z" />
-                  </svg>
-                </button>
               </div>
             );
           })

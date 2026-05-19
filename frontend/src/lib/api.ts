@@ -12,6 +12,7 @@ export interface Post {
   latitude: number | null;
   longitude: number | null;
   is_mine: boolean;
+  handle: string | null;
 }
 
 export interface DayEntry {

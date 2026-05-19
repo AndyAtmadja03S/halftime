@@ -29,7 +29,7 @@ feedRouter.get("/", optionalAuth, async (req, res, next) => {
     let query = supabase
       .from("posts")
       .select(
-        "id, user_id, device_id, audio_path, duration_ms, emoji, category, description, latitude, longitude, created_at, post_date",
+        "id, user_id, device_id, audio_path, duration_ms, emoji, category, description, latitude, longitude, created_at, post_date, users(username)",
       )
       .order("created_at", { ascending: false })
       .limit(limit);
@@ -60,6 +60,7 @@ feedRouter.get("/", optionalAuth, async (req, res, next) => {
       is_mine: userId
         ? row.user_id === userId || row.device_id === userId
         : false,
+      handle: ((row.users as unknown) as { username: string } | null)?.username ?? null,
     }));
 
     const nextCursor =
