@@ -1,6 +1,13 @@
 import { getDeviceHour, getDeviceId } from "./deviceId";
 import { getSessionToken, type AuthUser } from "./auth";
 
+/** Empty in dev (Vite proxy). Set VITE_API_URL on Vercel to your Railway URL. */
+const API_BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+
+function apiUrl(path: string): string {
+  return `${API_BASE}${path}`;
+}
+
 export type VoteValue = -1 | 0 | 1;
 
 export type FeedSort = "hot" | "new" | "top";
@@ -114,7 +121,7 @@ export async function register(
   username: string,
   password: string,
 ): Promise<AuthResponse> {
-  const res = await fetch("/api/auth/register", {
+  const res = await fetch(apiUrl("/api/auth/register"), {
     method: "POST",
     headers: { ...baseHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify({ username, password }),
@@ -126,7 +133,7 @@ export async function login(
   username: string,
   password: string,
 ): Promise<AuthResponse> {
-  const res = await fetch("/api/auth/login", {
+  const res = await fetch(apiUrl("/api/auth/login"), {
     method: "POST",
     headers: { ...baseHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify({ username, password }),
@@ -135,7 +142,7 @@ export async function login(
 }
 
 export async function logout(): Promise<void> {
-  const res = await fetch("/api/auth/logout", {
+  const res = await fetch(apiUrl("/api/auth/logout"), {
     method: "POST",
     headers: authHeaders(),
   });
@@ -157,7 +164,7 @@ export async function fetchFeed(params: {
   if (params.friends) qs.set("friends", "1");
   if (params.sort) qs.set("sort", params.sort);
   if (params.offset) qs.set("offset", String(params.offset));
-  const res = await fetch(`/api/feed?${qs.toString()}`, {
+  const res = await fetch(apiUrl(`/api/feed?${qs.toString()}`), {
     headers: authHeaders(),
   });
   return handle<FeedResponse>(res);
@@ -167,7 +174,7 @@ export async function votePost(
   postId: string,
   value: VoteValue,
 ): Promise<VoteResponse> {
-  const res = await fetch(`/api/posts/${encodeURIComponent(postId)}/vote`, {
+  const res = await fetch(apiUrl(`/api/posts/${encodeURIComponent(postId)}/vote`), {
     method: "POST",
     headers: { ...authHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify({ value }),
@@ -179,7 +186,7 @@ export async function fetchComments(
   postId: string,
 ): Promise<{ comments: Comment[] }> {
   const res = await fetch(
-    `/api/posts/${encodeURIComponent(postId)}/comments`,
+    apiUrl(`/api/posts/${encodeURIComponent(postId)}/comments`),
     { headers: authHeaders() },
   );
   return handle(res);
@@ -191,7 +198,7 @@ export async function createComment(
   anonymous: boolean,
 ): Promise<{ comment: Comment }> {
   const res = await fetch(
-    `/api/posts/${encodeURIComponent(postId)}/comments`,
+    apiUrl(`/api/posts/${encodeURIComponent(postId)}/comments`),
     {
       method: "POST",
       headers: { ...authHeaders(), "Content-Type": "application/json" },
@@ -206,14 +213,16 @@ export async function deleteComment(
   commentId: string,
 ): Promise<void> {
   const res = await fetch(
-    `/api/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}`,
+    apiUrl(
+      `/api/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}`,
+    ),
     { method: "DELETE", headers: authHeaders() },
   );
   await handle(res);
 }
 
 export async function fetchTodayStatus(): Promise<{ hasPostedToday: boolean }> {
-  const res = await fetch(`/api/feed/today`, { headers: authHeaders() });
+  const res = await fetch(apiUrl("/api/feed/today"), { headers: authHeaders() });
   return handle(res);
 }
 
@@ -257,7 +266,7 @@ export async function uploadPost(
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 45_000);
   try {
-    const res = await fetch(`/api/posts`, {
+    const res = await fetch(apiUrl("/api/posts"), {
       method: "POST",
       headers,
       body: form,
@@ -277,24 +286,24 @@ export async function uploadPost(
 }
 
 export async function fetchStats(): Promise<MeStats> {
-  const res = await fetch(`/api/me/stats`, { headers: authHeaders() });
+  const res = await fetch(apiUrl("/api/me/stats"), { headers: authHeaders() });
   return handle<MeStats>(res);
 }
 
 export async function fetchFriends(): Promise<{ friends: FriendUser[] }> {
-  const res = await fetch(`/api/friends`, { headers: authHeaders() });
+  const res = await fetch(apiUrl("/api/friends"), { headers: authHeaders() });
   return handle(res);
 }
 
 export async function fetchFriendRequests(): Promise<{ incoming: FriendUser[] }> {
-  const res = await fetch(`/api/friends/requests`, { headers: authHeaders() });
+  const res = await fetch(apiUrl("/api/friends/requests"), { headers: authHeaders() });
   return handle(res);
 }
 
 export async function sendFriendRequest(
   code: string,
 ): Promise<{ status: "pending" | "accepted" }> {
-  const res = await fetch(`/api/friends/requests`, {
+  const res = await fetch(apiUrl("/api/friends/requests"), {
     method: "POST",
     headers: { ...authHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify({ code }),
@@ -303,7 +312,7 @@ export async function sendFriendRequest(
 }
 
 export async function acceptFriendRequest(userId: string): Promise<void> {
-  const res = await fetch(`/api/friends/requests/${userId}/accept`, {
+  const res = await fetch(apiUrl(`/api/friends/requests/${userId}/accept`), {
     method: "POST",
     headers: authHeaders(),
   });
@@ -311,7 +320,7 @@ export async function acceptFriendRequest(userId: string): Promise<void> {
 }
 
 export async function declineFriendRequest(userId: string): Promise<void> {
-  const res = await fetch(`/api/friends/requests/${userId}/decline`, {
+  const res = await fetch(apiUrl(`/api/friends/requests/${userId}/decline`), {
     method: "POST",
     headers: authHeaders(),
   });
@@ -319,7 +328,7 @@ export async function declineFriendRequest(userId: string): Promise<void> {
 }
 
 export async function removeFriend(userId: string): Promise<void> {
-  const res = await fetch(`/api/friends/${userId}`, {
+  const res = await fetch(apiUrl(`/api/friends/${userId}`), {
     method: "DELETE",
     headers: authHeaders(),
   });
