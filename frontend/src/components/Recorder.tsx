@@ -28,6 +28,7 @@ type Phase = "idle" | "recording" | "review" | "uploading" | "done" | "error";
 interface Props {
   todaysPost: Post | null;
   onPosted: (post: Post) => void;
+  onAuthChange?: (authed: boolean) => void;
 }
 
 function pickMimeType(): string {
@@ -66,7 +67,7 @@ async function computeRms(blob: Blob): Promise<number | undefined> {
   }
 }
 
-export function Recorder({ todaysPost, onPosted }: Props) {
+export function Recorder({ todaysPost, onPosted, onAuthChange }: Props) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -260,11 +261,12 @@ export function Recorder({ todaysPost, onPosted }: Props) {
 
   const handleAuthSuccess = useCallback(() => {
     setAuthOpen(false);
+    onAuthChange?.(true);
     if (pendingRecordRef.current) {
       pendingRecordRef.current = false;
       void startRecording();
     }
-  }, [startRecording]);
+  }, [onAuthChange, startRecording]);
 
   const stop = useCallback(() => {
     if (recorderRef.current && recorderRef.current.state === "recording") {

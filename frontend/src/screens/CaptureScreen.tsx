@@ -7,9 +7,10 @@ import { isLoggedIn } from "../lib/auth";
 interface Props {
   todaysPost: Post | null;
   onPosted: (post: Post) => void;
+  onAuthChange?: (authed: boolean) => void;
 }
 
-export function CaptureScreen({ todaysPost, onPosted }: Props) {
+export function CaptureScreen({ todaysPost, onPosted, onAuthChange }: Props) {
   const [hasPostedToday, setHasPostedToday] = useState<boolean>(!!todaysPost);
 
   useEffect(() => {
@@ -54,7 +55,7 @@ export function CaptureScreen({ todaysPost, onPosted }: Props) {
           </motion.div>
         )}
         <div className="flex-1 min-h-0">
-          <Recorder todaysPost={todaysPost} onPosted={onPosted} />
+          <Recorder todaysPost={todaysPost} onPosted={onPosted} onAuthChange={onAuthChange} />
         </div>
       </motion.div>
     </div>

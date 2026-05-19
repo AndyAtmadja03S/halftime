@@ -62,6 +62,62 @@ const requestSchema = z.object({
   code: z.string().min(1).max(32),
 });
 
+const requestByUsernameSchema = z.object({
+  username: z.string().min(1).max(64),
+});
+
+type FriendOutcome =
+  | { status: "pending" | "accepted"; http: 200 | 201 }
+  | { error: string; http: 400 | 409 };
+
+async function applyFriendRequest(
+  meId: string,
+  targetId: string,
+): Promise<FriendOutcome> {
+  if (targetId === meId) {
+    return { error: "cannot_friend_self", http: 400 };
+  }
+  const probe = await supabase
+    .from("friendships")
+    .select("user_id, friend_id, status")
+    .or(
+      `and(user_id.eq.${meId},friend_id.eq.${targetId}),and(user_id.eq.${targetId},friend_id.eq.${meId})`,
+    )
+    .maybeSingle();
+  if (probe.error) throw probe.error;
+
+  const existing = probe.data;
+  if (existing) {
+    if (existing.status === "accepted") {
+      return { error: "already_friends", http: 409 };
+    }
+    if (existing.user_id === meId) {
+      return { error: "request_already_sent", http: 409 };
+    }
+    const { error: acceptErr } = await supabase
+      .from("friendships")
+      .update({ status: "accepted" })
+      .eq("user_id", targetId)
+      .eq("friend_id", meId)
+      .eq("status", "pending");
+    if (acceptErr) throw acceptErr;
+    return { status: "accepted", http: 200 };
+  }
+
+  const { error: insertErr } = await supabase.from("friendships").insert({
+    user_id: meId,
+    friend_id: targetId,
+    status: "pending",
+  });
+  if (insertErr) {
+    if ((insertErr as { code?: string }).code === "23505") {
+      return { error: "request_already_sent", http: 409 };
+    }
+    throw insertErr;
+  }
+  return { status: "pending", http: 201 };
+}
+
 friendsRouter.post("/requests", requireAuth, async (req, res, next) => {
   try {
     const me = req.userId!;
@@ -86,60 +142,57 @@ friendsRouter.post("/requests", requireAuth, async (req, res, next) => {
       res.status(404).json({ error: "code_not_found" });
       return;
     }
-    if (target.id === me) {
-      res.status(400).json({ error: "cannot_friend_self" });
+
+    const outcome = await applyFriendRequest(me, target.id);
+    if ("error" in outcome) {
+      res.status(outcome.http).json({ error: outcome.error });
       return;
     }
-
-    const probe = await supabase
-      .from("friendships")
-      .select("user_id, friend_id, status")
-      .or(
-        `and(user_id.eq.${me},friend_id.eq.${target.id}),and(user_id.eq.${target.id},friend_id.eq.${me})`,
-      )
-      .maybeSingle();
-    if (probe.error) throw probe.error;
-
-    const existing = probe.data;
-    if (existing) {
-      if (existing.status === "accepted") {
-        res.status(409).json({ error: "already_friends" });
-        return;
-      }
-      if (existing.user_id === me) {
-        res.status(409).json({ error: "request_already_sent" });
-        return;
-      }
-      // Inbound pending request from target → auto-accept.
-      const { error: acceptErr } = await supabase
-        .from("friendships")
-        .update({ status: "accepted" })
-        .eq("user_id", target.id)
-        .eq("friend_id", me)
-        .eq("status", "pending");
-      if (acceptErr) throw acceptErr;
-      res.status(200).json({ status: "accepted" });
-      return;
-    }
-
-    const { error: insertErr } = await supabase.from("friendships").insert({
-      user_id: me,
-      friend_id: target.id,
-      status: "pending",
-    });
-    if (insertErr) {
-      // Race: row created in the meantime. Treat as already-sent.
-      if ((insertErr as { code?: string }).code === "23505") {
-        res.status(409).json({ error: "request_already_sent" });
-        return;
-      }
-      throw insertErr;
-    }
-    res.status(201).json({ status: "pending" });
+    res.status(outcome.http).json({ status: outcome.status });
   } catch (err) {
     next(err);
   }
 });
+
+friendsRouter.post(
+  "/requests/by-username",
+  requireAuth,
+  async (req, res, next) => {
+    try {
+      const me = req.userId!;
+      const parsed = requestByUsernameSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "invalid_username" });
+        return;
+      }
+      const username = parsed.data.username.trim().toLowerCase();
+      if (!username) {
+        res.status(400).json({ error: "invalid_username" });
+        return;
+      }
+
+      const { data: target, error: targetErr } = await supabase
+        .from("users")
+        .select("id")
+        .eq("username", username)
+        .maybeSingle();
+      if (targetErr) throw targetErr;
+      if (!target) {
+        res.status(404).json({ error: "username_not_found" });
+        return;
+      }
+
+      const outcome = await applyFriendRequest(me, target.id);
+      if ("error" in outcome) {
+        res.status(outcome.http).json({ error: outcome.error });
+        return;
+      }
+      res.status(outcome.http).json({ status: outcome.status });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 friendsRouter.post(
   "/requests/:userId/accept",
