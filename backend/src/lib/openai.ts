@@ -25,7 +25,7 @@ export const CATEGORIES = [
 export type Category = (typeof CATEGORIES)[number];
 
 export const tagSchema = z.object({
-  emoji: z.string().min(1).max(8),
+  emoji: z.string().min(1).max(32),
   category: z.enum(CATEGORIES),
   description: z.string().min(1).max(80),
 });
@@ -73,7 +73,31 @@ Examples of good descriptions:
 - Morning birds before sunrise
 - Ocean breathing against the shore
 
-Match the description to what you actually hear. Vary your output — do not default to a generic line.`;
+Match the description to what you actually hear. Vary your output — do not default to a generic line.
+
+Your entire reply must be ONE raw JSON object only. No markdown. No code fences. No text before or after the JSON.`;
+
+/** Pull a single JSON object string out of model output (fences, preamble, etc.). */
+function extractJsonObjectString(raw: string): string {
+  let s = raw.trim();
+  const fenceBlock = /^```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$/i;
+  const blockMatch = s.match(fenceBlock);
+  if (blockMatch) s = blockMatch[1].trim();
+
+  if (s.startsWith("```")) {
+    s = s
+      .replace(/^```(?:json)?\s*\n?/i, "")
+      .replace(/\n?```\s*$/i, "")
+      .trim();
+  }
+
+  const start = s.indexOf("{");
+  const end = s.lastIndexOf("}");
+  if (start !== -1 && end > start) {
+    return s.slice(start, end + 1);
+  }
+  return s;
+}
 
 export async function tagSound(input: TagInput): Promise<SoundTag> {
   const t0 = Date.now();
@@ -82,9 +106,8 @@ export async function tagSound(input: TagInput): Promise<SoundTag> {
   try {
     // Single completion call utilizing OpenAI's native Audio-Preview modal capabilities
     const completion = await client.chat.completions.create({
-      model: "gpt-4o-mini-audio-preview",
+      model: "gpt-audio",
       modalities: ["text"],
-      response_format: { type: "json_object" },
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         {
@@ -98,28 +121,44 @@ export async function tagSound(input: TagInput): Promise<SoundTag> {
               type: "text",
               text: `Duration: ${input.durationMs}ms. Loudness (RMS 0-1): ${
                 input.rms?.toFixed(3) ?? "unknown"
-              }. Listen and return strict JSON.`,
+              }. Reply with only the JSON object (emoji, category, description).`,
             },
           ],
         },
       ],
     });
 
-    const raw = completion.choices[0]?.message?.content ?? "{}";
-    const parsed = tagSchema.safeParse(JSON.parse(raw));
-    
-    if (parsed.success) {
-      return {
-        ...parsed.data,
-        emoji: sanitizeEmoji(parsed.data.emoji, parsed.data.category),
-      };
+    const raw = completion.choices[0]?.message?.content ?? "";
+    if (!raw.trim()) {
+      log.warn("gpt.tagSound empty content", { ms: Date.now() - t0 });
+    } else {
+      let data: unknown;
+      try {
+        data = JSON.parse(extractJsonObjectString(raw));
+      } catch (parseErr) {
+        log.warn("gpt.tagSound JSON.parse failed", {
+          ms: Date.now() - t0,
+          raw: raw.slice(0, 400),
+          error:
+            parseErr instanceof Error ? parseErr.message : String(parseErr),
+        });
+        throw parseErr;
+      }
+
+      const parsed = tagSchema.safeParse(data);
+      if (parsed.success) {
+        return {
+          ...parsed.data,
+          emoji: sanitizeEmoji(parsed.data.emoji, parsed.data.category),
+        };
+      }
+
+      log.warn("gpt.tagSound schema validation failed, falling back", {
+        ms: Date.now() - t0,
+        raw: raw.slice(0, 400),
+        zod: parsed.error.flatten(),
+      });
     }
-
-    log.warn("gpt.tagSound returned invalid JSON, falling back", {
-      ms: Date.now() - t0,
-      raw: raw.slice(0, 200),
-    });
-
   } catch (err) {
     log.error("gpt.tagSound ✖ failed", {
       ms: Date.now() - t0,
@@ -127,7 +166,6 @@ export async function tagSound(input: TagInput): Promise<SoundTag> {
     });
   }
 
-  // Fallback return if parsing fails or catch block fires
   return {
     emoji: "🌫️",
     category: "quiet",
