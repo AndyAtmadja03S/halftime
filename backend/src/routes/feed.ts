@@ -32,6 +32,7 @@ interface FeedRow {
   upvotes?: number | null;
   downvotes?: number | null;
   score?: number | null;
+  comment_count?: number | null;
   users?: { username: string } | { username: string }[] | null;
 }
 
@@ -76,8 +77,8 @@ feedRouter.get("/", optionalAuth, async (req, res, next) => {
     // columns don't exist yet, fall back to the legacy select so the feed
     // keeps working until the SQL migration is applied.
     const baseCols =
-      "id, user_id, device_id, audio_path, duration_ms, emoji, category, description, latitude, longitude, created_at, post_date, users(username)";
-    const voteCols = `${baseCols}, upvotes, downvotes, score`;
+      "id, user_id, device_id, audio_path, duration_ms, emoji, category, description, latitude, longitude, created_at, post_date, users!posts_user_id_fkey(username)";
+    const voteCols = `${baseCols}, upvotes, downvotes, score, comment_count`;
 
     const buildQuery = (selectCols: string) => {
       let query = supabase
@@ -189,6 +190,7 @@ feedRouter.get("/", optionalAuth, async (req, res, next) => {
         downvotes: Number(row.downvotes ?? 0),
         score: Number(row.score ?? 0),
         my_vote: voteMap.get(row.id) ?? 0,
+        comment_count: Number(row.comment_count ?? 0),
       };
     });
 

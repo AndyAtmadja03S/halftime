@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
+import { CommentsSection } from "./CommentsSection";
 import { Waveform } from "./Waveform";
 import { colorFor } from "../lib/categoryColor";
 import { relativeTime } from "../lib/relativeTime";
@@ -10,14 +11,28 @@ interface Props {
   post: Post | null;
   isOpen: boolean;
   onClose: () => void;
+  onCommentCountChange?: (postId: string, delta: number) => void;
 }
 
-export function SoundDetailModal({ post, isOpen, onClose }: Props) {
+export function SoundDetailModal({
+  post,
+  isOpen,
+  onClose,
+  onCommentCountChange,
+}: Readonly<Props>) {
   if (!post) return null;
 
   const accent = colorFor(post.category);
 
-  return <SoundDetailModalInner post={post} isOpen={isOpen} onClose={onClose} accent={accent} />;
+  return (
+    <SoundDetailModalInner
+      post={post}
+      isOpen={isOpen}
+      onClose={onClose}
+      accent={accent}
+      onCommentCountChange={onCommentCountChange}
+    />
+  );
 }
 
 function SoundDetailModalInner({
@@ -25,7 +40,14 @@ function SoundDetailModalInner({
   isOpen,
   onClose,
   accent,
-}: { post: Post; isOpen: boolean; onClose: () => void; accent: string }) {
+  onCommentCountChange,
+}: {
+  post: Post;
+  isOpen: boolean;
+  onClose: () => void;
+  accent: string;
+  onCommentCountChange?: (postId: string, delta: number) => void;
+}) {
   const [locationLabel, setLocationLabel] = useState<string | null>(null);
 
   useEffect(() => {
@@ -58,8 +80,9 @@ function SoundDetailModalInner({
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             transition={{ duration: 0.3, ease: "easeOut" }}
             onClick={(e) => e.stopPropagation()}
-            className="fixed inset-4 z-50 flex flex-col gap-6 rounded-3xl border border-white/10 bg-gradient-to-b from-ink-100 to-ink-0 p-6 shadow-2xl md:inset-auto md:left-1/2 md:top-1/2 md:w-full md:max-w-sm md:-translate-x-1/2 md:-translate-y-1/2"
+            className="fixed inset-4 z-50 flex flex-col overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-ink-100 to-ink-0 shadow-2xl md:inset-auto md:left-1/2 md:top-1/2 md:w-full md:max-w-sm md:max-h-[90vh] md:-translate-x-1/2 md:-translate-y-1/2"
           >
+            <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-6">
             {/* Header with emoji background */}
             <div
               className="relative -mx-6 -mt-6 flex flex-col items-center justify-center gap-4 rounded-t-3xl px-6 py-12"
@@ -135,6 +158,14 @@ function SoundDetailModalInner({
               </div>
             )}
 
+            {/* Comments */}
+            <CommentsSection
+              postId={post.id}
+              onCountChange={(delta) =>
+                onCommentCountChange?.(post.id, delta)
+              }
+            />
+
             {/* Close button */}
             <button
               onClick={onClose}
@@ -142,6 +173,7 @@ function SoundDetailModalInner({
             >
               Close
             </button>
+            </div>
           </motion.div>
         </>
       )}

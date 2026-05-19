@@ -288,9 +288,34 @@ export function DiscoverScreen({ todaysPost }: Readonly<Props>) {
                         </p>
                       </div>
 
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        {post.comment_count > 0 && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedPost(post);
+                            }}
+                            className="flex items-center gap-1 rounded-full bg-white/[0.04] px-2 py-1 text-[11px] text-neutral-400 transition-colors hover:text-neutral-200"
+                            aria-label={`${post.comment_count} comments`}
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              fill="currentColor"
+                              className="h-3 w-3"
+                            >
+                              <path d="M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2z" />
+                            </svg>
+                            <span className="tabular-nums">
+                              {post.comment_count}
+                            </span>
+                          </button>
+                        )}
+
                       {/* Vote stack */}
                       <div
-                        className="flex shrink-0 items-center gap-1 rounded-full bg-white/[0.04] px-1.5 py-0.5"
+                        className="flex items-center gap-1 rounded-full bg-white/[0.04] px-1.5 py-0.5"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <button
@@ -338,6 +363,7 @@ export function DiscoverScreen({ todaysPost }: Readonly<Props>) {
                             <path d="M12 20l-8-9h5V4h6v7h5l-8 9z" />
                           </svg>
                         </button>
+                      </div>
                       </div>
                     </div>
 
@@ -423,6 +449,23 @@ export function DiscoverScreen({ todaysPost }: Readonly<Props>) {
         post={selectedPost}
         isOpen={!!selectedPost}
         onClose={() => setSelectedPost(null)}
+        onCommentCountChange={(postId, delta) => {
+          setPosts((prev) =>
+            prev.map((p) =>
+              p.id === postId
+                ? { ...p, comment_count: Math.max(p.comment_count + delta, 0) }
+                : p,
+            ),
+          );
+          setSelectedPost((cur) =>
+            cur && cur.id === postId
+              ? {
+                  ...cur,
+                  comment_count: Math.max(cur.comment_count + delta, 0),
+                }
+              : cur,
+          );
+        }}
       />
     </div>
   );

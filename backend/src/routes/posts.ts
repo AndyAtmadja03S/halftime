@@ -6,6 +6,7 @@ import { createLogger } from "../lib/log.js";
 import { BUCKET, supabase } from "../lib/supabase.js";
 import { tagSound } from "../lib/openai.js";
 import { requireAuth } from "../middleware/auth.js";
+import { commentsRouter } from "./comments.js";
 
 const log = createLogger("posts");
 
@@ -32,6 +33,8 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const postsRouter = Router();
+
+postsRouter.use("/:postId/comments", commentsRouter);
 
 postsRouter.post(
   "/",
@@ -160,6 +163,7 @@ postsRouter.post(
           downvotes: 0,
           score: 0,
           my_vote: 0,
+          comment_count: 0,
         },
       });
     } catch (err) {

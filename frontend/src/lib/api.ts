@@ -21,6 +21,7 @@ export interface Post {
   downvotes: number;
   score: number;
   my_vote: VoteValue;
+  comment_count: number;
 }
 
 export interface VoteResponse {
@@ -28,6 +29,15 @@ export interface VoteResponse {
   downvotes: number;
   score: number;
   my_vote: VoteValue;
+}
+
+export interface Comment {
+  id: string;
+  body: string;
+  is_anonymous: boolean;
+  created_at: string;
+  handle: string | null;
+  is_mine: boolean;
 }
 
 export interface DayEntry {
@@ -163,6 +173,43 @@ export async function votePost(
     body: JSON.stringify({ value }),
   });
   return handle<VoteResponse>(res);
+}
+
+export async function fetchComments(
+  postId: string,
+): Promise<{ comments: Comment[] }> {
+  const res = await fetch(
+    `/api/posts/${encodeURIComponent(postId)}/comments`,
+    { headers: authHeaders() },
+  );
+  return handle(res);
+}
+
+export async function createComment(
+  postId: string,
+  body: string,
+  anonymous: boolean,
+): Promise<{ comment: Comment }> {
+  const res = await fetch(
+    `/api/posts/${encodeURIComponent(postId)}/comments`,
+    {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ body, anonymous }),
+    },
+  );
+  return handle(res);
+}
+
+export async function deleteComment(
+  postId: string,
+  commentId: string,
+): Promise<void> {
+  const res = await fetch(
+    `/api/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}`,
+    { method: "DELETE", headers: authHeaders() },
+  );
+  await handle(res);
 }
 
 export async function fetchTodayStatus(): Promise<{ hasPostedToday: boolean }> {
