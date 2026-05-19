@@ -1,6 +1,10 @@
 import { getDeviceHour, getDeviceId } from "./deviceId";
 import { getSessionToken, type AuthUser } from "./auth";
 
+export type VoteValue = -1 | 0 | 1;
+
+export type FeedSort = "hot" | "new" | "top";
+
 export interface Post {
   id: string;
   emoji: string;
@@ -13,6 +17,27 @@ export interface Post {
   longitude: number | null;
   is_mine: boolean;
   handle: string | null;
+  upvotes: number;
+  downvotes: number;
+  score: number;
+  my_vote: VoteValue;
+  comment_count: number;
+}
+
+export interface VoteResponse {
+  upvotes: number;
+  downvotes: number;
+  score: number;
+  my_vote: VoteValue;
+}
+
+export interface Comment {
+  id: string;
+  body: string;
+  is_anonymous: boolean;
+  created_at: string;
+  handle: string | null;
+  is_mine: boolean;
 }
 
 export interface DayEntry {
@@ -122,16 +147,69 @@ export async function fetchFeed(params: {
   limit?: number;
   mine?: boolean;
   friends?: boolean;
+  sort?: FeedSort;
+  offset?: number;
 } = {}): Promise<FeedResponse> {
   const qs = new URLSearchParams();
   if (params.before) qs.set("before", params.before);
   if (params.limit) qs.set("limit", String(params.limit));
   if (params.mine) qs.set("mine", "1");
   if (params.friends) qs.set("friends", "1");
+  if (params.sort) qs.set("sort", params.sort);
+  if (params.offset) qs.set("offset", String(params.offset));
   const res = await fetch(`/api/feed?${qs.toString()}`, {
     headers: authHeaders(),
   });
   return handle<FeedResponse>(res);
+}
+
+export async function votePost(
+  postId: string,
+  value: VoteValue,
+): Promise<VoteResponse> {
+  const res = await fetch(`/api/posts/${encodeURIComponent(postId)}/vote`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ value }),
+  });
+  return handle<VoteResponse>(res);
+}
+
+export async function fetchComments(
+  postId: string,
+): Promise<{ comments: Comment[] }> {
+  const res = await fetch(
+    `/api/posts/${encodeURIComponent(postId)}/comments`,
+    { headers: authHeaders() },
+  );
+  return handle(res);
+}
+
+export async function createComment(
+  postId: string,
+  body: string,
+  anonymous: boolean,
+): Promise<{ comment: Comment }> {
+  const res = await fetch(
+    `/api/posts/${encodeURIComponent(postId)}/comments`,
+    {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ body, anonymous }),
+    },
+  );
+  return handle(res);
+}
+
+export async function deleteComment(
+  postId: string,
+  commentId: string,
+): Promise<void> {
+  const res = await fetch(
+    `/api/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}`,
+    { method: "DELETE", headers: authHeaders() },
+  );
+  await handle(res);
 }
 
 export async function fetchTodayStatus(): Promise<{ hasPostedToday: boolean }> {
