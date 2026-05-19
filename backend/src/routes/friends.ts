@@ -187,6 +187,79 @@ friendsRouter.post(
     }
   },
 );
+const byHandleSchema = z.object({
+  handle: z.string().min(1).max(32),
+});
+
+friendsRouter.post("/requests/by-handle", requireAuth, async (req, res, next) => {
+  try {
+    const me = req.userId!;
+    const parsed = byHandleSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_handle" });
+      return;
+    }
+
+    const { data: target, error: targetErr } = await supabase
+      .from("users")
+      .select("id")
+      .eq("username", parsed.data.handle)
+      .maybeSingle();
+    if (targetErr) throw targetErr;
+    if (!target) {
+      res.status(404).json({ error: "handle_not_found" });
+      return;
+    }
+    if (target.id === me) {
+      res.status(400).json({ error: "cannot_friend_self" });
+      return;
+    }
+
+    const probe = await supabase
+      .from("friendships")
+      .select("user_id, friend_id, status")
+      .or(`and(user_id.eq.${me},friend_id.eq.${target.id}),and(user_id.eq.${target.id},friend_id.eq.${me})`)
+      .maybeSingle();
+    if (probe.error) throw probe.error;
+
+    const existing = probe.data;
+    if (existing) {
+      if (existing.status === "accepted") {
+        res.status(409).json({ error: "already_friends" });
+        return;
+      }
+      if (existing.user_id === me) {
+        res.status(409).json({ error: "request_already_sent" });
+        return;
+      }
+      const { error: acceptErr } = await supabase
+        .from("friendships")
+        .update({ status: "accepted" })
+        .eq("user_id", target.id)
+        .eq("friend_id", me)
+        .eq("status", "pending");
+      if (acceptErr) throw acceptErr;
+      res.status(200).json({ status: "accepted" });
+      return;
+    }
+
+    const { error: insertErr } = await supabase.from("friendships").insert({
+      user_id: me,
+      friend_id: target.id,
+      status: "pending",
+    });
+    if (insertErr) {
+      if ((insertErr as { code?: string }).code === "23505") {
+        res.status(409).json({ error: "request_already_sent" });
+        return;
+      }
+      throw insertErr;
+    }
+    res.status(201).json({ status: "pending" });
+  } catch (err) {
+    next(err);
+  }
+});
 
 friendsRouter.delete("/:userId", requireAuth, async (req, res, next) => {
   try {

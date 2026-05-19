@@ -182,9 +182,7 @@ feedRouter.get("/", optionalAuth, async (req, res, next) => {
         latitude: row.latitude,
         longitude: row.longitude,
         audio_url: signed[i].data?.signedUrl ?? null,
-        is_mine: userId
-          ? row.user_id === userId || row.device_id === userId
-          : false,
+        is_mine: userId ? row.user_id === userId : false,
         handle: username,
         upvotes: Number(row.upvotes ?? 0),
         downvotes: Number(row.downvotes ?? 0),
@@ -288,7 +286,7 @@ feedRouter.get("/search", optionalAuth, async (req, res, next) => {
         latitude: row.latitude,
         longitude: row.longitude,
         audio_url: signed[i].data?.signedUrl ?? null,
-        is_mine: userId ? row.user_id === userId || row.device_id === userId : false,
+        is_mine: userId ? row.user_id === userId : false,
         handle: username,
         upvotes: 0,
         downvotes: 0,
