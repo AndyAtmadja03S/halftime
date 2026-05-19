@@ -238,50 +238,51 @@ export function DiscoverScreen({ todaysPost, searchOpen, onSearchClose }: Readon
         </div>
       )}
 
-      {/* Filter + sort pills — hidden while searching */}
+      {/* Filter + sort — hidden while searching */}
       {!searchOpen && (
-        <>
-          <div className="flex gap-2 px-4 pt-3 pb-2">
-            <button
-              type="button"
-              onClick={() => setFriendsOnly(false)}
-              className={`rounded-full px-4 py-1.5 text-[12px] font-semibold tracking-wider uppercase transition-colors duration-200 ${
-                !friendsOnly
-                  ? "bg-neutral-600 text-white"
-                  : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200"
-              }`}
-            >
-              Everyone
-            </button>
-            <button
-              type="button"
-              onClick={() => setFriendsOnly(true)}
-              className={`rounded-full px-4 py-1.5 text-[12px] font-semibold tracking-wider uppercase transition-colors duration-200 ${
-                friendsOnly
-                  ? "bg-neutral-600 text-white"
-                  : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200"
-              }`}
-            >
-              Friends
-            </button>
+        <div>
+          {/* Row 1 — Audience: full-width tab switcher, high visual weight */}
+          <div className="flex border-b border-white/[0.06]">
+            {[
+              { label: "Everyone", value: false },
+              { label: "Friends", value: true },
+            ].map(({ label, value }) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => setFriendsOnly(value)}
+                className={`relative flex-1 py-3 text-[12px] font-semibold tracking-[0.2em] uppercase transition-colors duration-200 ${
+                  friendsOnly === value
+                    ? "text-white"
+                    : "text-white/30 hover:text-white/50"
+                }`}
+              >
+                {label}
+                {friendsOnly === value && (
+                  <span className="absolute bottom-0 inset-x-0 h-px bg-white/60" />
+                )}
+              </button>
+            ))}
           </div>
-          <div className="flex gap-1 px-4 pb-2">
+
+          {/* Row 2 — Sort: small secondary text tabs */}
+          <div className="flex items-center gap-1 px-3 py-2 border-b border-white/[0.06]">
             {SORT_TABS.map((tab) => (
               <button
                 key={tab.value}
                 type="button"
                 onClick={() => setSort(tab.value)}
-                className={`rounded-full px-3 py-1 text-[11px] font-semibold tracking-wider uppercase transition-colors duration-200 ${
+                className={`px-3 py-1 rounded-full text-[10px] font-medium tracking-[0.22em] uppercase transition-all duration-200 ${
                   sort === tab.value
-                    ? "bg-white/10 text-white"
-                    : "text-neutral-500 hover:text-neutral-300"
+                    ? "bg-white/[0.1] text-white"
+                    : "text-white/40 hover:text-white/60"
                 }`}
               >
                 {tab.label}
               </button>
             ))}
           </div>
-        </>
+        </div>
       )}
 
       <div className="flex-1 space-y-[11px] overflow-y-auto overflow-x-hidden px-4 pt-1 pb-8">
