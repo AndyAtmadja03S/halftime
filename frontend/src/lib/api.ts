@@ -342,3 +342,14 @@ export async function searchFeed(q: string, limit = 20): Promise<FeedResponse> {
   });
   return handle<FeedResponse>(res);
 }
+
+export async function sendFriendRequestByHandle(
+  username: string,
+): Promise<{ status: "pending" | "accepted" }> {
+  const res = await fetch(apiUrl("/api/friends/requests/by-handle"), {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ handle: username }),
+  });
+  return handle<{ status: "pending" | "accepted" }>(res);
+}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   fetchFeed,
+  fetchFriends,
   searchFeed,
   votePost,
   type FeedSort,
@@ -83,6 +84,19 @@ export function DiscoverScreen({ todaysPost, searchOpen, onSearchClose }: Readon
   const [playingPostId, setPlayingPostId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [addedHandles, setAddedHandles] = useState<Set<string>>(new Set());
+
+  // Fetch accepted friends once on mount to pre-populate addedHandles
+  useEffect(() => {
+    fetchFriends()
+      .then(({ friends }) => {
+        const handles = new Set(friends.map((f) => f.username));
+        setAddedHandles(handles);
+      })
+      .catch(() => {
+        // silently ignore — addedHandles just stays empty
+      });
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -110,7 +124,6 @@ export function DiscoverScreen({ todaysPost, searchOpen, onSearchClose }: Readon
     };
   }, []);
 
-  // Focus input when search opens, clear when it closes
   useEffect(() => {
     if (searchOpen) {
       setTimeout(() => searchInputRef.current?.focus(), 50);
@@ -120,7 +133,6 @@ export function DiscoverScreen({ todaysPost, searchOpen, onSearchClose }: Readon
     }
   }, [searchOpen]);
 
-  // Debounced search
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     const q = query.trim();
@@ -238,10 +250,9 @@ export function DiscoverScreen({ todaysPost, searchOpen, onSearchClose }: Readon
         </div>
       )}
 
-      {/* Filter + sort — hidden while searching */}
+      {/* Filter + sort */}
       {!searchOpen && (
         <div>
-          {/* Row 1 — Audience: full-width tab switcher, high visual weight */}
           <div className="flex border-b border-white/[0.06]">
             {[
               { label: "Everyone", value: false },
@@ -265,7 +276,6 @@ export function DiscoverScreen({ todaysPost, searchOpen, onSearchClose }: Readon
             ))}
           </div>
 
-          {/* Row 2 — Sort: small secondary text tabs */}
           <div className="flex items-center gap-1 px-3 py-2 border-b border-white/[0.06]">
             {SORT_TABS.map((tab) => (
               <button
@@ -438,6 +448,8 @@ export function DiscoverScreen({ todaysPost, searchOpen, onSearchClose }: Readon
         post={selectedPost}
         isOpen={!!selectedPost}
         onClose={() => setSelectedPost(null)}
+        addedHandles={addedHandles}
+        onHandleAdded={(handle) => setAddedHandles((prev) => new Set(prev).add(handle))}
         onCommentCountChange={(postId, delta) => {
           setPosts((prev) =>
             prev.map((p) =>

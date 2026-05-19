@@ -77,7 +77,7 @@ export function AddFriendSheet({ isOpen, onClose, onSuccess }: Props) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm"
           />
           <motion.div
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
@@ -85,14 +85,26 @@ export function AddFriendSheet({ isOpen, onClose, onSuccess }: Props) {
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             transition={{ duration: 0.3, ease: "easeOut" }}
             onClick={(e) => e.stopPropagation()}
-            className="fixed inset-x-4 top-[18%] z-50 mx-auto flex max-w-sm flex-col gap-5 rounded-3xl border border-white/10 bg-gradient-to-b from-ink-100 to-ink-0 p-6 shadow-2xl"
+            className="fixed inset-x-4 top-[18%] z-[70] mx-auto flex max-w-sm flex-col gap-5 rounded-3xl border border-white/10 bg-gradient-to-b from-ink-100 to-ink-0 p-6 shadow-2xl"
           >
+          <div className="flex items-start justify-between">
             <div>
               <h2 className="text-xl font-semibold text-mist-500">Add a friend</h2>
               <p className="mt-1 text-sm text-mist-200">
                 Enter their 8-character code.
               </p>
             </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="grid h-7 w-7 place-items-center rounded-full bg-white/20 text-white transition hover:bg-white/30"
+              aria-label="Close"
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+              </svg>
+            </button>
+          </div>
 
             <form onSubmit={(e) => void submit(e)} className="flex flex-col gap-3">
               <label className="flex flex-col gap-1.5">
