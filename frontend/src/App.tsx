@@ -4,6 +4,7 @@ import { TabBar, type Tab } from "./components/TabBar";
 import { TopBar } from "./components/TopBar";
 import { CaptureScreen } from "./screens/CaptureScreen";
 import { DiscoverScreen } from "./screens/DiscoverScreen";
+import { MapScreen } from "./screens/MapScreen";
 import { MicTest } from "./screens/MicTest";
 import { ProfileScreen } from "./screens/ProfileScreen";
 import { SocialGraphScreen } from "./screens/SocialGraphScreen";
@@ -94,6 +95,8 @@ function MainApp() {
               />
             ) : tab === "discover" ? (
               <DiscoverScreen todaysPost={lastPost} />
+            ) : tab === "map" ? (
+              <MapScreen />
             ) : tab === "graph" ? (
               <SocialGraphScreen />
             ) : (

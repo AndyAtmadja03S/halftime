@@ -8,6 +8,8 @@ interface Props {
   fallbackCenter?: [number, number];
 }
 
+const DEFAULT_CENTER: [number, number] = [0, 20];
+
 const DARK_STYLE = {
   version: 8 as const,
   sources: {
@@ -71,7 +73,7 @@ function buildMarker(post: Post, isMine: boolean): HTMLElement {
   return wrap;
 }
 
-export function MapView({ posts, fallbackCenter = [0, 20] }: Props) {
+export function MapView({ posts, fallbackCenter = DEFAULT_CENTER }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MlMap | null>(null);
   const markersRef = useRef<maplibregl.Marker[]>([]);
@@ -102,6 +104,7 @@ export function MapView({ posts, fallbackCenter = [0, 20] }: Props) {
       attributionControl: false,
     });
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-left");
+    map.on("load", () => map.resize());
     mapRef.current = map;
 
     return () => {
@@ -128,7 +131,7 @@ export function MapView({ posts, fallbackCenter = [0, 20] }: Props) {
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-ink-0">
-      <div ref={containerRef} className="absolute inset-0" />
+      <div ref={containerRef} className="h-full w-full" />
       {located.length === 0 ? (
         <div className="pointer-events-none absolute inset-0 grid place-items-center">
           <p className="rounded-full border border-line-200 bg-ink-100/70 px-4 py-2 text-[10px] tracking-[var(--tracking-chrome)] text-mist-200 uppercase backdrop-blur">

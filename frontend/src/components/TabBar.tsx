@@ -1,7 +1,7 @@
 import clsx from "clsx";
 import type { ReactNode } from "react";
 
-export type Tab = "capture" | "discover" | "graph" | "profile";
+export type Tab = "capture" | "discover" | "map" | "graph" | "profile";
 
 interface Props {
   active: Tab;
@@ -54,6 +54,17 @@ const ICONS: Record<Tab, ReactNode> = {
       />
     </svg>
   ),
+  map: (
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+      <path
+        d="M9 4L3 7v13l6-3 6 3 6-3V4l-6 3-6-3z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+      <path d="M9 4v13M15 7v13" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  ),
   graph: (
     <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
       <circle cx="6" cy="6" r="2.4" stroke="currentColor" strokeWidth="1.4" />
@@ -64,13 +75,13 @@ const ICONS: Record<Tab, ReactNode> = {
   ),
 };
 
-const TABS: Tab[] = ["capture", "discover", "graph", "profile"];
+const TABS: Tab[] = ["capture", "discover", "map", "graph", "profile"];
 
 export function TabBar({ active, onChange }: Props) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-line-100 bg-ink-0/95 backdrop-blur">
       <div
-        className="mx-auto grid max-w-md grid-cols-4"
+        className="mx-auto grid max-w-md grid-cols-5"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0) + 8px)" }}
       >
         {TABS.map((tab) => {
