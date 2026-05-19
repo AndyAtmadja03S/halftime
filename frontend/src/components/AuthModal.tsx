@@ -12,6 +12,7 @@ interface Props {
   onSuccess: (user: AuthUser) => void;
   title?: string;
   subtitle?: string;
+  defaultMode?: Mode;
 }
 
 export function AuthModal({
@@ -20,8 +21,9 @@ export function AuthModal({
   onSuccess,
   title = "Create an account to post",
   subtitle = "Pick a username and password. You'll need this to share captures.",
+  defaultMode = "register",
 }: Props) {
-  const [mode, setMode] = useState<Mode>("register");
+  const [mode, setMode] = useState<Mode>(defaultMode);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -192,13 +194,13 @@ export function AuthModal({
                 </>
               ) : (
                 <>
-                  New here?{" "}
+                  Don't have an account?{" "}
                   <button
                     type="button"
                     onClick={() => switchMode("register")}
                     className="text-mist-500 underline-offset-2 hover:underline"
                   >
-                    Create account
+                    Create an account
                   </button>
                 </>
               )}

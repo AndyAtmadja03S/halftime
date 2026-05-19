@@ -163,6 +163,7 @@ export function ProfileScreen({ authed, onAuthChange }: Props) {
           }}
           title="Sign in to your account"
           subtitle="Use the username and password you created when you first posted."
+          defaultMode="login"
         />
       </div>
     );
