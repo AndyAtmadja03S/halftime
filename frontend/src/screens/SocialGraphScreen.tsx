@@ -55,6 +55,23 @@ const MOCK_CONNECTIONS: Connection[] = [
   { from: "u5", to: "u6", soundsInCommon: 17 },
 ];
 
+const directFriendIds = new Set(
+  MOCK_CONNECTIONS
+    .filter((c) => c.from === "me" || c.to === "me")
+    .map((c) => (c.from === "me" ? c.to : c.from))
+);
+
+const friendOfFriendIds = new Set(
+  MOCK_CONNECTIONS
+    .filter((c) => {
+      const aIsFriend = directFriendIds.has(c.from);
+      const bIsFriend = directFriendIds.has(c.to);
+      return (aIsFriend || bIsFriend) && c.from !== "me" && c.to !== "me";
+    })
+    .flatMap((c) => [c.from, c.to])
+    .filter((id) => !directFriendIds.has(id) && id !== "me")
+);
+
 const AUTO_ROTATE_Y = 0.045;
 const FOCAL = 420;
 const BASE_SCALE = 1;
@@ -162,14 +179,18 @@ export function SocialGraphScreen() {
       const to = posById.get(conn.to);
       if (!from || !to) continue;
       const involvesMe = conn.from === "me" || conn.to === "me";
-      const midDepth = (from.depth + to.depth) / 2;
-      const depthFade = Math.max(0.25, Math.min(1, 1.15 + midDepth / (NODE_RADIUS * 2.2)));
+      const connectsDirectFriends =
+        directFriendIds.has(conn.from) && directFriendIds.has(conn.to);
+
       if (involvesMe) {
-        ctx.strokeStyle = `rgba(52, 211, 153, ${(0.35 + 0.4) * depthFade})`;
+        ctx.strokeStyle = `rgba(52, 211, 153, 0.7)`;
         ctx.lineWidth = 2;
+      } else if (connectsDirectFriends) {
+        ctx.strokeStyle = `rgba(129, 140, 248, 0.5)`;
+        ctx.lineWidth = 1.5;
       } else {
-        ctx.strokeStyle = `rgba(147, 197, 253, ${(0.22 + 0.38) * depthFade * 0.6})`;
-        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = `rgba(251, 191, 36, 0.35)`;
+        ctx.lineWidth = 1;
       }
       ctx.beginPath();
       ctx.moveTo(from.sx, from.sy);
@@ -178,41 +199,24 @@ export function SocialGraphScreen() {
     }
 
     // Nodes
-    for (const { user: u, sx, sy, depth, scale: depthScale } of projected) {
+    for (const { user: u, sx, sy, scale: depthScale } of projected) {
       const isSelected = selected === u.id;
       const isHovered = hovered === u.id;
       const isMe = u.isMe === true;
+      const isDirectFriend = directFriendIds.has(u.id);
+      const isFriendOfFriend = friendOfFriendIds.has(u.id);
+
       const baseR = isMe ? 26 : isSelected ? 28 : isHovered ? 24 : 20;
       const radius = baseR * Math.max(0.55, depthScale);
-      const depthFade = Math.max(0.4, Math.min(1, 1.1 + depth / (NODE_RADIUS * 2)));
-
-      let fillColor: string;
-      let borderColor: string;
-      let borderWidth: number;
-
-      if (isMe) {
-        fillColor = `rgba(16, 185, 129, 1)`;
-        borderColor = `rgba(52, 211, 153, 1)`;
-        borderWidth = isSelected ? 3 : 2.5;
-      } else if (isSelected) {
-        fillColor = `rgba(59, 130, 246, 1)`;
-        borderColor = "rgba(147, 197, 253, 1)";
-        borderWidth = 2.5;
-      } else if (isHovered) {
-        fillColor = `rgba(99, 179, 237, 0.9)`;
-        borderColor = `rgba(147, 197, 253, 1)`;
-        borderWidth = 2;
-      } else {
-        fillColor = `rgba(99, 116, 160, 0.85)`;
-        borderColor = `rgba(147, 197, 253, 0.8)`;
-        borderWidth = 1.5;
-      }
 
       // Glow
-// Glow
       ctx.fillStyle = isMe
         ? `rgba(16, 185, 129, 0.25)`
-        : `rgba(99, 116, 160, 0.15)`;
+        : isDirectFriend
+          ? `rgba(99, 102, 241, 0.2)`
+          : isFriendOfFriend
+            ? `rgba(245, 158, 11, 0.15)`
+            : `rgba(99, 116, 160, 0.1)`;
       ctx.beginPath();
       ctx.arc(sx, sy, radius + 12 * depthScale, 0, Math.PI * 2);
       ctx.fill();
@@ -220,10 +224,10 @@ export function SocialGraphScreen() {
       // Fill
       ctx.fillStyle = isMe
         ? `#10b981`
-        : isSelected
-          ? `#3b82f6`
-          : isHovered
-            ? `#60a5fa`
+        : isDirectFriend
+          ? isSelected ? `#6366f1` : isHovered ? `#818cf8` : `#4f46e5`
+          : isFriendOfFriend
+            ? isSelected ? `#f59e0b` : isHovered ? `#fbbf24` : `#d97706`
             : `#4a5568`;
       ctx.beginPath();
       ctx.arc(sx, sy, radius, 0, Math.PI * 2);
@@ -232,17 +236,17 @@ export function SocialGraphScreen() {
       // Border
       ctx.strokeStyle = isMe
         ? `#34d399`
-        : isSelected
-          ? `#93c5fd`
-          : isHovered
-            ? `#bfdbfe`
+        : isDirectFriend
+          ? `#a5b4fc`
+          : isFriendOfFriend
+            ? `#fcd34d`
             : `#6b7280`;
       ctx.lineWidth = isMe ? 2.5 : isSelected ? 2.5 : isHovered ? 2 : 1.5;
       ctx.beginPath();
       ctx.arc(sx, sy, radius, 0, Math.PI * 2);
       ctx.stroke();
 
-      // "YOU" label
+      // YOU label
       if (isMe) {
         ctx.fillStyle = "#ffffff";
         ctx.font = `bold ${Math.round(8 * Math.max(0.7, depthScale))}px sans-serif`;
@@ -365,9 +369,7 @@ export function SocialGraphScreen() {
   const connections = MOCK_CONNECTIONS.filter(
     (c) => c.from === selectedUser || c.to === selectedUser,
   );
-  const friendCount = MOCK_CONNECTIONS.filter(
-    (c) => c.from === "me" || c.to === "me"
-  ).length;
+  const friendCount = directFriendIds.size;
 
   return (
     <div className="relative flex h-full w-full flex-col bg-ink-0">
@@ -404,8 +406,12 @@ export function SocialGraphScreen() {
             <span className="text-mist-200">You</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="h-2.5 w-2.5 rounded-full bg-blue-400" />
+            <div className="h-2.5 w-2.5 rounded-full bg-indigo-500" />
             <span className="text-mist-200">Friend</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+            <span className="text-mist-200">Friend of friend</span>
           </div>
         </motion.div>
 
@@ -435,15 +441,24 @@ export function SocialGraphScreen() {
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-2">
-                  {selectedUserData.isMe && (
-                    <div className="h-2 w-2 rounded-full bg-emerald-400" />
-                  )}
+                  <div className={`h-2 w-2 rounded-full ${
+                    selectedUserData.isMe
+                      ? "bg-emerald-400"
+                      : directFriendIds.has(selectedUserData.id)
+                        ? "bg-indigo-400"
+                        : "bg-amber-400"
+                  }`} />
                   <h3 className="text-lg font-semibold text-mist-500">
                     {selectedUserData.isMe ? "You" : selectedUserData.handle}
                   </h3>
                 </div>
                 <p className="text-xs text-mist-200">
-                  {selectedUserData.totalCaptures} sounds captured
+                  {selectedUserData.isMe
+                    ? "Your profile"
+                    : directFriendIds.has(selectedUserData.id)
+                      ? "Direct friend"
+                      : "Friend of a friend"
+                  } · {selectedUserData.totalCaptures} sounds captured
                 </p>
               </div>
               <button
@@ -458,13 +473,18 @@ export function SocialGraphScreen() {
             {connections.length > 0 && (
               <div className="space-y-2">
                 <p className="text-xs uppercase tracking-wider text-mist-200">
-                  {selectedUserData.isMe ? "Your friends" : "Mutual friends"}
+                  {selectedUserData.isMe ? "Your friends" : "Connections"}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {connections.map((conn) => {
                     const connectedId = conn.from === selectedUser ? conn.to : conn.from;
                     const connectedUser = MOCK_USERS.find((u) => u.id === connectedId);
                     if (!connectedUser) return null;
+                    const dotColor = connectedUser.isMe
+                      ? "bg-emerald-400"
+                      : directFriendIds.has(connectedUser.id)
+                        ? "bg-indigo-400"
+                        : "bg-amber-400";
                     return (
                       <motion.button
                         key={connectedId}
@@ -475,7 +495,7 @@ export function SocialGraphScreen() {
                         transition={{ duration: 0.25 }}
                         className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 transition hover:bg-white/[0.08]"
                       >
-                        <div className={`h-2 w-2 rounded-full ${connectedUser.isMe ? "bg-emerald-400" : "bg-blue-400"}`} />
+                        <div className={`h-2 w-2 rounded-full ${dotColor}`} />
                         <span className="text-xs text-mist-300">
                           {connectedUser.isMe ? "You" : connectedUser.handle}
                         </span>
@@ -492,7 +512,7 @@ export function SocialGraphScreen() {
         ) : (
           <div className="py-2 text-center">
             <p className="text-xs uppercase tracking-wider text-mist-200">
-              Tap a friend to see your connection
+              Tap a node to explore your network
             </p>
           </div>
         )}
