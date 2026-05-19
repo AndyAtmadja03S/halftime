@@ -1,12 +1,6 @@
 import { getDeviceHour, getDeviceId } from "./deviceId";
 import { getSessionToken, type AuthUser } from "./auth";
-
-/** Empty in dev (Vite proxy). Set VITE_API_URL on Vercel to your Railway URL. */
-const API_BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
-
-function apiUrl(path: string): string {
-  return `${API_BASE}${path}`;
-}
+import { apiUrl } from "./apiUrl";
 
 export type VoteValue = -1 | 0 | 1;
 

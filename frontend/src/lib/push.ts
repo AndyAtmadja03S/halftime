@@ -1,4 +1,5 @@
 import { getSessionToken } from "./auth";
+import { apiUrl } from "./apiUrl";
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY as string;
 
@@ -14,7 +15,7 @@ async function sendSubscriptionToServer(sub: PushSubscription): Promise<void> {
   if (!token) return;
   const json = sub.toJSON();
   const keys = json.keys ?? {};
-  await fetch("/api/push/subscribe", {
+  await fetch(apiUrl("/api/push/subscribe"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -73,7 +74,7 @@ export async function disablePushNotifications(): Promise<void> {
 
   const token = getSessionToken();
   if (token) {
-    await fetch("/api/push/subscribe", {
+    await fetch(apiUrl("/api/push/subscribe"), {
       method: "DELETE",
       headers: {
         "Content-Type": "application/json",
