@@ -286,7 +286,7 @@ export function Recorder({ todaysPost, onPosted }: Props) {
     <div className="flex h-full flex-col py-8">
 
       {/* ── Stage (grows to fill vertical space, orb lives here) ── */}
-      <div className="relative flex flex-1 items-center justify-center w-full">
+      <div className="relative flex flex-1 items-center justify-center w-full overflow-hidden">
 
         {/* Central orb — the only flex child, always perfectly centred */}
         <div className="relative grid h-44 w-44 place-items-center">
@@ -424,7 +424,7 @@ export function Recorder({ todaysPost, onPosted }: Props) {
                 : undefined
             }
             className={clsx(
-              "w-full rounded-xl border px-5 py-4 text-sm font-medium tracking-[var(--tracking-chrome)] uppercase transition active:scale-[0.98]",
+              "w-full rounded-xl border px-5 py-4 text-sm font-medium tracking-[var(--tracking-chrome)] uppercase transition active:scale-[0.98] min-h-[52px]",
               phase === "uploading"
                 ? "border-line-100 bg-ink-200 text-mist-100"
                 : phase === "recording"
@@ -432,7 +432,7 @@ export function Recorder({ todaysPost, onPosted }: Props) {
                   : "border-mist-500 bg-mist-500 hover:bg-mist-400",
             )}
           >
-            <AnimatePresence mode="wait">
+            <AnimatePresence mode="popLayout">
               <motion.span
                 key={phase}
                 initial={{ opacity: 0 }}
@@ -474,10 +474,12 @@ function SonarRing({ index, fast }: { index: number; fast: boolean }) {
   const duration = fast ? 1.0 : 2.6;
   const delay = (index * duration) / 3;
   return (
-    <motion.div
+    <div
       className="pointer-events-none absolute inset-0 rounded-full border border-white/20"
-      animate={{ scale: [1, 2.8], opacity: [0.6, 0] }}
-      transition={{ duration, delay, repeat: Infinity, ease: "easeOut" }}
+      style={{
+        animation: `sonar-pulse ${duration}s ${delay}s ease-out infinite backwards`,
+        willChange: "transform, opacity",
+      }}
     />
   );
 }

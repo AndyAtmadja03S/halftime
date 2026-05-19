@@ -9,7 +9,7 @@ interface Props {
 
 export function CaptureScreen({ todaysPost, onPosted }: Props) {
   return (
-    <div className="h-full px-5">
+    <div className="h-full overflow-hidden px-5">
       <motion.div
         className="h-full"
         initial={{ opacity: 0 }}
