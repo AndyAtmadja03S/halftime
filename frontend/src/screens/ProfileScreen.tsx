@@ -12,6 +12,11 @@ import {
   type MeStats,
 } from "../lib/api";
 import { getStoredUser } from "../lib/auth";
+import {
+  disablePushNotifications,
+  enablePushNotifications,
+  notificationPermission,
+} from "../lib/push";
 
 function monthOffset(year: number, monthIndex: number, delta: number) {
   const d = new Date(Date.UTC(year, monthIndex + delta, 1));
@@ -52,6 +57,9 @@ export function ProfileScreen({ authed, onAuthChange }: Props) {
   const [copied, setCopied] = useState(false);
   const [incoming, setIncoming] = useState<FriendUser[]>([]);
   const [pendingAction, setPendingAction] = useState<Set<string>>(new Set());
+  const [notifState, setNotifState] = useState<NotificationPermission | "unsupported" | "pending">(
+    () => notificationPermission(),
+  );
 
   const refreshRequests = useCallback(() => {
     fetchFriendRequests()
@@ -339,6 +347,55 @@ export function ProfileScreen({ authed, onAuthChange }: Props) {
         onPrev={() => setView(monthOffset(view.year, view.monthIndex, -1))}
         onNext={() => setView(monthOffset(view.year, view.monthIndex, +1))}
       />
+
+      {/* Daily reminder notifications */}
+      {notifState !== "unsupported" && (
+        <section className="rounded-2xl border border-line-200 bg-ink-200 p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] tracking-[var(--tracking-chrome)] text-mist-100 uppercase">
+                Daily Reminders
+              </p>
+              <p className="mt-1 text-xs text-mist-200">
+                {notifState === "granted"
+                  ? "We'll nudge you to record before midnight."
+                  : "Get reminded to capture your daily frequency."}
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={notifState === "pending" || notifState === "denied"}
+              onClick={async () => {
+                if (notifState === "granted") {
+                  setNotifState("pending");
+                  await disablePushNotifications();
+                  setNotifState("default");
+                } else {
+                  setNotifState("pending");
+                  const result = await enablePushNotifications();
+                  setNotifState(result);
+                }
+              }}
+              className={`relative h-7 w-12 rounded-full transition-colors duration-200 disabled:opacity-50 ${
+                notifState === "granted" ? "bg-white/80" : "bg-white/[0.1]"
+              }`}
+            >
+              <span
+                className={`absolute top-1 h-5 w-5 rounded-full shadow transition-all duration-200 ${
+                  notifState === "granted"
+                    ? "left-6 bg-ink-300"
+                    : "left-1 bg-white/40"
+                }`}
+              />
+            </button>
+          </div>
+          {notifState === "denied" && (
+            <p className="mt-2 text-[10px] text-mist-100">
+              Notifications are blocked. Enable them in your browser settings.
+            </p>
+          )}
+        </section>
+      )}
 
       <AddFriendSheet
         isOpen={addOpen}

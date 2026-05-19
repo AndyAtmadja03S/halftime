@@ -14,6 +14,8 @@ import { authRouter } from "./routes/auth.js";
 import { friendsRouter } from "./routes/friends.js";
 import { meRouter } from "./routes/me.js";
 import { postsRouter } from "./routes/posts.js";
+import { pushRouter } from "./routes/push.js";
+import { startScheduler } from "./lib/scheduler.js";
 
 const log = createLogger("server");
 const app = express();
@@ -41,6 +43,9 @@ app.use("/api/posts", postsRouter);
 app.use("/api/feed", feedRouter);
 app.use("/api/friends", friendsRouter);
 app.use("/api/me", meRouter);
+app.use("/api/push", pushRouter);
+
+startScheduler();
 
 app.use((_req: Request, res: Response, _next: NextFunction) => {
   res.status(404).json({ error: "not_found" });

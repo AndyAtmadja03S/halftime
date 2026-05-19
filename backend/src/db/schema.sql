@@ -200,3 +200,26 @@ drop trigger if exists post_comments_count_trigger on post_comments;
 create trigger post_comments_count_trigger
 after insert or delete on post_comments
 for each row execute function bump_comment_count();
+
+-- Push notification subscriptions
+create table if not exists push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  endpoint text not null unique,
+  p256dh text not null,
+  auth text not null,
+  -- minutes behind UTC (getTimezoneOffset(): Sydney AEST = -600, NYC EST = 300)
+  tz_offset int not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists push_subs_user_idx on push_subscriptions (user_id);
+
+-- Dedup log: one row per subscription per day per notification slot
+-- Slots: 0=9am, 1=1pm, 2=5pm, 3=8pm (local time)
+create table if not exists push_notification_logs (
+  subscription_id uuid not null references push_subscriptions(id) on delete cascade,
+  notif_date date not null,
+  notif_slot int not null check (notif_slot between 0 and 3),
+  sent_at timestamptz not null default now(),
+  primary key (subscription_id, notif_date, notif_slot)
+);
