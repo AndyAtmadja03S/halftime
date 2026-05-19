@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { ensureFriendCode } from "../lib/friendCode.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
 import { createSession, deleteSession } from "../lib/sessions.js";
 import { supabase } from "../lib/supabase.js";
@@ -33,11 +34,13 @@ function userPayload(user: {
   id: string;
   username: string;
   display_name: string | null;
+  friend_code: string | null;
 }) {
   return {
     id: user.id,
     username: user.username,
     displayName: user.display_name ?? user.username.toUpperCase(),
+    friendCode: user.friend_code,
   };
 }
 
@@ -62,7 +65,7 @@ authRouter.post("/register", async (req, res, next) => {
         password_hash: passwordHash,
         display_name: username.toUpperCase(),
       })
-      .select("id, username, display_name")
+      .select("id, username, display_name, friend_code")
       .single();
 
     if (error) {
@@ -73,12 +76,13 @@ authRouter.post("/register", async (req, res, next) => {
       throw error;
     }
 
+    const friendCode = await ensureFriendCode(user);
     await claimDevicePosts(user.id, req.header("x-device-id") ?? undefined);
     const token = await createSession(user.id);
 
     res.status(201).json({
       token,
-      user: userPayload(user),
+      user: userPayload({ ...user, friend_code: friendCode }),
     });
   } catch (err) {
     next(err);
@@ -97,7 +101,7 @@ authRouter.post("/login", async (req, res, next) => {
 
     const { data: user, error } = await supabase
       .from("users")
-      .select("id, username, display_name, password_hash")
+      .select("id, username, display_name, friend_code, password_hash")
       .eq("username", username)
       .maybeSingle();
 
@@ -115,12 +119,13 @@ authRouter.post("/login", async (req, res, next) => {
       return;
     }
 
+    const friendCode = await ensureFriendCode(user);
     await claimDevicePosts(user.id, req.header("x-device-id") ?? undefined);
     const token = await createSession(user.id);
 
     res.json({
       token,
-      user: userPayload(user),
+      user: userPayload({ ...user, friend_code: friendCode }),
     });
   } catch (err) {
     next(err);
@@ -142,11 +147,12 @@ authRouter.get("/me", requireAuth, async (req, res, next) => {
   try {
     const { data: user, error } = await supabase
       .from("users")
-      .select("id, username, display_name")
+      .select("id, username, display_name, friend_code")
       .eq("id", req.userId!)
       .single();
     if (error) throw error;
-    res.json({ user: userPayload(user) });
+    const friendCode = await ensureFriendCode(user);
+    res.json({ user: userPayload({ ...user, friend_code: friendCode }) });
   } catch (err) {
     next(err);
   }

@@ -5,6 +5,7 @@ export interface AuthUser {
   id: string;
   username: string;
   displayName: string;
+  friendCode: string | null;
 }
 
 export function getSessionToken(): string | null {
