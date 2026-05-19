@@ -2,10 +2,18 @@ import maplibregl, { type Map as MlMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Post } from "../lib/api";
+import { ApiError, sendFriendRequestByUsername, type Post } from "../lib/api";
 import { colorFor } from "../lib/categoryColor";
 import { relativeTime } from "../lib/relativeTime";
 import { Waveform } from "./Waveform";
+
+type FriendBtnState =
+  | { kind: "idle" }
+  | { kind: "sending" }
+  | { kind: "sent"; status: "pending" | "accepted" }
+  | { kind: "already" }
+  | { kind: "pending" }
+  | { kind: "error"; message: string };
 
 interface Props {
   posts: Post[];
@@ -40,9 +48,11 @@ const DARK_STYLE = {
       maxzoom: 22,
       paint: {
         "raster-opacity": 0.92,
-        "raster-brightness-min": 0.15,
-        "raster-saturation": -0.2,
-        "raster-contrast": 0.14,
+        "raster-brightness-min": 0.18,
+        "raster-brightness-max": 1.0,
+        "raster-saturation": 0.25,
+        "raster-contrast": 0.18,
+        "raster-hue-rotate": 215,
       },
     },
   ],
@@ -65,7 +75,22 @@ function safeEmoji(post: Post): string {
   return FALLBACK_EMOJI[post.category] ?? "🌫️";
 }
 
+// colorFor() returns "var(--color-accent-X)". For inline gradient/box-shadow
+// concatenation we need the resolved hex so we can append alpha (e.g. "#abc55").
+function resolveAccent(category: string): string {
+  const v = colorFor(category);
+  const m = v.match(/--[\w-]+/);
+  if (!m) return "#7a8bbd";
+  const resolved = getComputedStyle(document.documentElement)
+    .getPropertyValue(m[0])
+    .trim();
+  return resolved || "#7a8bbd";
+}
+
 function buildMarker(post: Post, isMine: boolean): HTMLElement {
+  const accent = resolveAccent(post.category);
+  const size = isMine ? 52 : 40;
+
   const wrap = document.createElement("div");
   wrap.className = "halftime-marker";
   wrap.style.cursor = "pointer";
@@ -75,12 +100,14 @@ function buildMarker(post: Post, isMine: boolean): HTMLElement {
       position: relative;
       display: grid;
       place-items: center;
-      width: ${isMine ? 52 : 40}px;
-      height: ${isMine ? 52 : 40}px;
+      width: ${size}px;
+      height: ${size}px;
       border-radius: 999px;
       background: rgba(20,20,26,0.95);
-      border: 1px solid ${isMine ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.32)"};
-      box-shadow: ${isMine ? "0 12px 28px -8px rgba(0,0,0,0.7)" : "0 6px 18px -4px rgba(0,0,0,0.55)"};
+      border: 1px solid ${isMine ? "rgba(255,255,255,0.85)" : `${accent}66`};
+      box-shadow:
+        0 0 0 1px ${accent}22,
+        0 6px 18px -4px rgba(0,0,0,0.55)${isMine ? `, 0 0 24px ${accent}44` : ""};
     ">
       <span style="font-size: ${isMine ? 24 : 20}px; line-height: 1;">${safeEmoji(post)}</span>
       ${
@@ -108,12 +135,50 @@ export function MapView({ posts, fallbackCenter = DEFAULT_CENTER }: Props) {
   // Map from marker element → post so vanilla DOM handlers can reference the post
   const markerPostsRef = useRef<Map<HTMLElement, Post>>(new Map());
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [friendBtn, setFriendBtn] = useState<FriendBtnState>({ kind: "idle" });
 
   // Stable ref so marker click handlers always call the latest setter
   const handleClickRef = useRef<(post: Post) => void>(() => {});
   handleClickRef.current = (post: Post) => {
-    setSelectedPost((prev) => (prev?.id === post.id ? null : post));
+    const isDeselect = selectedPost?.id === post.id;
+    setSelectedPost(isDeselect ? null : post);
+    setFriendBtn({ kind: "idle" });
+
+    // On selection, pan to put the marker at the exact center of the viewport.
+    if (
+      !isDeselect &&
+      post.latitude !== null &&
+      post.longitude !== null &&
+      mapRef.current
+    ) {
+      mapRef.current.easeTo({
+        center: [post.longitude, post.latitude],
+        duration: 600,
+      });
+    }
   };
+
+  async function handleAddFriend(username: string) {
+    setFriendBtn({ kind: "sending" });
+    try {
+      const r = await sendFriendRequestByUsername(username);
+      setFriendBtn({ kind: "sent", status: r.status });
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.code === "already_friends") {
+          setFriendBtn({ kind: "already" });
+          return;
+        }
+        if (err.code === "request_already_sent") {
+          setFriendBtn({ kind: "pending" });
+          return;
+        }
+        setFriendBtn({ kind: "error", message: err.code });
+        return;
+      }
+      setFriendBtn({ kind: "error", message: "request_failed" });
+    }
+  }
 
   const located = useMemo(
     () =>
@@ -151,6 +216,10 @@ export function MapView({ posts, fallbackCenter = DEFAULT_CENTER }: Props) {
         : { center: initial, zoom: located.length > 0 ? 13 : 2 }),
       attributionControl: false,
     });
+    map.addControl(
+      new maplibregl.NavigationControl({ showZoom: true, showCompass: false }),
+      "top-right",
+    );
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-left");
     map.on("load", () => map.resize());
     mapRef.current = map;
@@ -207,25 +276,36 @@ export function MapView({ posts, fallbackCenter = DEFAULT_CENTER }: Props) {
     for (const [el, post] of markerPostsRef.current) {
       const inner = el.firstElementChild as HTMLElement | null;
       if (!inner) continue;
+      const accent = resolveAccent(post.category);
       const active = selectedPost?.id === post.id;
       inner.style.transition = "transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease";
       inner.style.transform = active ? "scale(1.25)" : "";
       inner.style.boxShadow = active
-        ? "0 0 0 3px rgba(255,255,255,0.35), 0 14px 32px -8px rgba(0,0,0,0.8)"
+        ? `0 0 0 3px rgba(255,255,255,0.35), 0 14px 32px -8px rgba(0,0,0,0.8), 0 0 28px ${accent}66`
         : post.is_mine
-          ? "0 12px 28px -8px rgba(0,0,0,0.7)"
-          : "0 6px 18px -8px rgba(0,0,0,0.6)";
+          ? `0 0 0 1px ${accent}22, 0 6px 18px -4px rgba(0,0,0,0.55), 0 0 24px ${accent}44`
+          : `0 0 0 1px ${accent}22, 0 6px 18px -4px rgba(0,0,0,0.55)`;
       inner.style.borderColor = active
         ? "rgba(255,255,255,0.9)"
         : post.is_mine
-          ? "rgba(255,255,255,0.75)"
-          : "rgba(255,255,255,0.18)";
+          ? "rgba(255,255,255,0.85)"
+          : `${accent}66`;
     }
   }, [selectedPost]);
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-ink-0">
       <div ref={containerRef} className="h-full w-full" />
+
+      {/* Atmospheric radial vignette so the map fades toward the edges */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 z-10"
+        style={{
+          background:
+            "radial-gradient(ellipse at center, transparent 55%, rgba(8,10,22,0.55) 100%)",
+        }}
+      />
 
       {/* Tap-to-dismiss scrim */}
       <AnimatePresence>
@@ -320,6 +400,15 @@ export function MapView({ posts, fallbackCenter = DEFAULT_CENTER }: Props) {
                   <p className="text-xs text-mist-100">Audio unavailable.</p>
                 )}
               </div>
+
+              {selectedPost.handle && !selectedPost.is_mine ? (
+                <div className="mt-4">
+                  <FriendActionButton
+                    state={friendBtn}
+                    onClick={() => handleAddFriend(selectedPost.handle!)}
+                  />
+                </div>
+              ) : null}
             </div>
           </motion.div>
         )}
@@ -333,5 +422,43 @@ export function MapView({ posts, fallbackCenter = DEFAULT_CENTER }: Props) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function FriendActionButton({
+  state,
+  onClick,
+}: {
+  state: FriendBtnState;
+  onClick: () => void;
+}) {
+  const disabled =
+    state.kind === "sending" ||
+    state.kind === "sent" ||
+    state.kind === "already" ||
+    state.kind === "pending";
+
+  let label = "Add as friend";
+  if (state.kind === "sending") label = "Sending…";
+  else if (state.kind === "sent")
+    label = state.status === "accepted" ? "Friends ✓" : "Request sent ✓";
+  else if (state.kind === "already") label = "Already friends";
+  else if (state.kind === "pending") label = "Request pending";
+  else if (state.kind === "error") label = "Couldn’t send — tap to retry";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={
+        "w-full rounded-full border px-4 py-2 text-[12px] uppercase tracking-[0.14em] transition " +
+        (disabled
+          ? "border-white/[0.08] bg-white/[0.04] text-mist-200"
+          : "border-white/[0.18] bg-white/[0.08] text-mist-400 hover:bg-white/[0.14] active:bg-white/[0.18]")
+      }
+    >
+      {label}
+    </button>
   );
 }

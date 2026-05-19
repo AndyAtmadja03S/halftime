@@ -329,6 +329,24 @@ export async function removeFriend(userId: string): Promise<void> {
   await handle(res);
 }
 
+export async function fetchSimilarFeed(): Promise<FeedResponse> {
+  const res = await fetch(apiUrl("/api/feed/similar"), {
+    headers: authHeaders(),
+  });
+  return handle<FeedResponse>(res);
+}
+
+export async function sendFriendRequestByUsername(
+  username: string,
+): Promise<{ status: "pending" | "accepted" }> {
+  const res = await fetch(apiUrl("/api/friends/requests/by-username"), {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ username }),
+  });
+  return handle(res);
+}
+
 export async function searchFeed(q: string, limit = 20): Promise<FeedResponse> {
   const qs = new URLSearchParams({ q, limit: String(limit) });
   const res = await fetch(apiUrl(`/api/feed/search?${qs.toString()}`), {

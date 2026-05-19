@@ -172,3 +172,22 @@ export async function tagSound(input: TagInput): Promise<SoundTag> {
     description: "A soft moment between things",
   };
 }
+
+export async function embedDescription(text: string): Promise<number[] | null> {
+  const t0 = Date.now();
+  try {
+    const r = await client.embeddings.create({
+      model: "text-embedding-3-small",
+      input: text,
+    });
+    const vec = r.data[0]?.embedding ?? null;
+    if (!vec) log.warn("embed empty", { ms: Date.now() - t0 });
+    return vec;
+  } catch (err) {
+    log.warn("embed ✖", {
+      ms: Date.now() - t0,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}

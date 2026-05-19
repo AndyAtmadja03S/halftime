@@ -4,7 +4,7 @@ import multer from "multer";
 import { z } from "zod";
 import { createLogger } from "../lib/log.js";
 import { BUCKET, supabase } from "../lib/supabase.js";
-import { tagSound } from "../lib/openai.js";
+import { embedDescription, tagSound } from "../lib/openai.js";
 import { requireAuth } from "../middleware/auth.js";
 import { commentsRouter } from "./comments.js";
 
@@ -103,6 +103,8 @@ postsRouter.post(
         rms: parsed.data.rms,
       });
 
+      const embedding = await embedDescription(tag.description);
+
       rlog.info("db.insert → start");
       const insertT0 = Date.now();
 
@@ -119,6 +121,7 @@ postsRouter.post(
       };
       // Legacy column if still present in Supabase
       row.device_id = userId;
+      if (embedding) row.embedding = embedding;
 
       const { data: inserted, error: insertErr } = await supabase
         .from("posts")

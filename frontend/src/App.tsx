@@ -147,7 +147,11 @@ function MainApp() {
             className="absolute inset-0 overflow-y-auto pb-24"
           >
             {tab === "capture" ? (
-              <CaptureScreen todaysPost={lastPost} onPosted={handlePosted} />
+              <CaptureScreen
+                todaysPost={lastPost}
+                onPosted={handlePosted}
+                onAuthChange={setAuthed}
+              />
             ) : tab === "discover" ? (
               <DiscoverScreen
                 todaysPost={lastPost}

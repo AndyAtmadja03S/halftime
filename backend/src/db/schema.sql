@@ -223,3 +223,25 @@ create table if not exists push_notification_logs (
   sent_at timestamptz not null default now(),
   primary key (subscription_id, notif_date, notif_slot)
 );
+-- Similar-sound discovery: embed the AI-generated description with
+-- OpenAI text-embedding-3-small (1536 dims) and rank posts by cosine distance.
+create extension if not exists vector;
+alter table posts add column if not exists embedding vector(1536);
+create index if not exists posts_embedding_idx
+  on posts using hnsw (embedding vector_cosine_ops);
+
+-- Returns the top `match_count` posts whose embedding is closest (cosine) to
+-- `query_embedding`. Pass `exclude_user` to drop the seed user's own posts.
+create or replace function match_posts(
+  query_embedding vector(1536),
+  match_count int default 30,
+  exclude_user uuid default null
+) returns table(id uuid, similarity float)
+language sql stable as $$
+  select p.id, 1 - (p.embedding <=> query_embedding) as similarity
+  from posts p
+  where p.embedding is not null
+    and (exclude_user is null or p.user_id is null or p.user_id <> exclude_user)
+  order by p.embedding <=> query_embedding
+  limit match_count;
+$$;

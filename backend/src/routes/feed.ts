@@ -220,6 +220,117 @@ feedRouter.get("/today", requireAuth, async (req, res, next) => {
   }
 });
 
+feedRouter.get("/similar", requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.userId!;
+
+    const { data: seed, error: seedErr } = await supabase
+      .from("posts")
+      .select("id, embedding")
+      .eq("user_id", userId)
+      .not("embedding", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (seedErr) throw seedErr;
+    if (!seed) {
+      res.json({ posts: [], nextCursor: null });
+      return;
+    }
+
+    const { data: matches, error: matchErr } = await supabase.rpc(
+      "match_posts",
+      {
+        query_embedding: seed.embedding,
+        match_count: 50,
+        exclude_user: userId,
+      },
+    );
+    if (matchErr) throw matchErr;
+
+    const matchRows = (matches ?? []) as { id: string; similarity: number }[];
+    if (matchRows.length === 0) {
+      res.json({ posts: [], nextCursor: null });
+      return;
+    }
+
+    const ids = matchRows.map((m) => m.id);
+    const { data: rowsData, error: rowsErr } = await supabase
+      .from("posts")
+      .select(
+        "id, user_id, device_id, audio_path, duration_ms, emoji, category, description, latitude, longitude, created_at, post_date, upvotes, downvotes, score, comment_count, users!posts_user_id_fkey(username)",
+      )
+      .in("id", ids);
+    if (rowsErr) throw rowsErr;
+
+    const byId = new Map<string, FeedRow>();
+    for (const r of (rowsData ?? []) as unknown as FeedRow[]) {
+      byId.set(r.id, r);
+    }
+    const orderedRows = matchRows
+      .map((m) => byId.get(m.id))
+      .filter((r): r is FeedRow => r !== undefined);
+
+    const [signed, myVotes] = await Promise.all([
+      Promise.all(
+        orderedRows.map((row) =>
+          supabase.storage.from(BUCKET).createSignedUrl(row.audio_path, 60 * 60),
+        ),
+      ),
+      orderedRows.length > 0
+        ? supabase
+            .from("post_votes")
+            .select("post_id, value")
+            .eq("user_id", userId)
+            .in(
+              "post_id",
+              orderedRows.map((r) => r.id),
+            )
+        : Promise.resolve({
+            data: [] as { post_id: string; value: number }[],
+            error: null,
+          }),
+    ]);
+
+    const voteMap = new Map<string, number>();
+    for (const v of (myVotes.data ?? []) as {
+      post_id: string;
+      value: number;
+    }[]) {
+      voteMap.set(v.post_id, v.value);
+    }
+
+    const posts = orderedRows.map((row, i) => {
+      const userRel = row.users;
+      const username = Array.isArray(userRel)
+        ? userRel[0]?.username ?? null
+        : userRel?.username ?? null;
+      return {
+        id: row.id,
+        emoji: row.emoji,
+        category: row.category,
+        description: row.description,
+        duration_ms: row.duration_ms,
+        created_at: row.created_at,
+        latitude: row.latitude,
+        longitude: row.longitude,
+        audio_url: signed[i].data?.signedUrl ?? null,
+        is_mine: row.user_id === userId || row.device_id === userId,
+        handle: username,
+        upvotes: Number(row.upvotes ?? 0),
+        downvotes: Number(row.downvotes ?? 0),
+        score: Number(row.score ?? 0),
+        my_vote: voteMap.get(row.id) ?? 0,
+        comment_count: Number(row.comment_count ?? 0),
+      };
+    });
+
+    res.json({ posts, nextCursor: null });
+  } catch (err) {
+    next(err);
+  }
+});
+
 const searchSchema = z.object({
   q: z.string().min(1).max(100),
   limit: z.coerce.number().int().min(1).max(50).default(20),
