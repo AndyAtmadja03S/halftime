@@ -12,6 +12,17 @@ import { Waveform } from "./Waveform";
 const MAX_MS = 10_000;
 const TICK_MS = 100;
 
+const UPLOADING_MESSAGES = [
+  "Reading the room…",
+  "Listening to the air…",
+  "Catching the frequency…",
+  "Tuning into your moment…",
+  "Holding the silence…",
+  "Tracing the atmosphere…",
+  "Sensing the mood…",
+] as const;
+const UPLOADING_MESSAGE_INTERVAL_MS = 1600;
+
 type Phase = "idle" | "recording" | "review" | "uploading" | "done" | "error";
 
 interface Props {
@@ -65,6 +76,16 @@ export function Recorder({ todaysPost, onPosted }: Props) {
   const [shareLocation, setShareLocation] = useState(true);
   const [anonymous, setAnonymous] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
+  const [uploadMsgIndex, setUploadMsgIndex] = useState(0);
+
+  useEffect(() => {
+    if (phase !== "uploading") return;
+    setUploadMsgIndex(0);
+    const id = window.setInterval(() => {
+      setUploadMsgIndex((i) => (i + 1) % UPLOADING_MESSAGES.length);
+    }, UPLOADING_MESSAGE_INTERVAL_MS);
+    return () => window.clearInterval(id);
+  }, [phase]);
   const pendingRecordRef = useRef(false);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -273,7 +294,7 @@ export function Recorder({ todaysPost, onPosted }: Props) {
     phase === "recording"
       ? "Ten seconds of where you are"
       : phase === "uploading"
-        ? "Reading the room…"
+        ? UPLOADING_MESSAGES[uploadMsgIndex]
         : phase === "error" && error
           ? error
           : (todaysPost?.description ?? "Hold a quiet moment. Share where you are.");
