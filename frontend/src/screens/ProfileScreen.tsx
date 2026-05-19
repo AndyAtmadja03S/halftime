@@ -230,9 +230,41 @@ export function ProfileScreen({ authed, onAuthChange }: Props) {
           type="button"
           onClick={copyCode}
           disabled={!friendCode}
-          className="mt-2 w-full text-left font-mono text-2xl tracking-[0.25em] text-mist-500 transition hover:opacity-80 disabled:opacity-60"
+          aria-label="Copy friend code"
+          className="mt-2 flex w-full items-center justify-between gap-3 font-mono text-2xl tracking-[0.25em] text-mist-500 transition hover:opacity-80 disabled:opacity-60"
         >
-          {friendCode ? formatFriendCode(friendCode) : "Generating…"}
+          <span>{friendCode ? formatFriendCode(friendCode) : "Generating…"}</span>
+          {friendCode &&
+            (copied ? (
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-5 w-5 shrink-0 text-emerald-400"
+                aria-hidden
+              >
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            ) : (
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.6}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-5 w-5 shrink-0 text-mist-300"
+                aria-hidden
+              >
+                <rect x="9" y="9" width="12" height="12" rx="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            ))}
         </button>
         <button
           type="button"
