@@ -153,10 +153,11 @@ export async function uploadPost(
     form.append("longitude", String(opts.longitude));
 
   // Anonymous posts use a one-time random device ID so the post isn't
-  // linked to the user's persistent profile.
+  // linked to the user's persistent profile. Non-anonymous uploads must
+  // include the session token — the backend requires auth on POST /api/posts.
   const headers: HeadersInit = opts.anonymous
     ? { "x-device-id": crypto.randomUUID(), "x-device-hour": String(getDeviceHour()) }
-    : baseHeaders();
+    : authHeaders();
 
   console.info("[voice] upload → start", {
     bytes: blob.size,
