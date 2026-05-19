@@ -26,12 +26,18 @@ function MainApp() {
   const [tab, setTab] = useState<Tab>("discover");
   const [lastPost, setLastPost] = useState<Post | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [authed, setAuthed] = useState(isLoggedIn());
   const settingsRef = useRef<HTMLDivElement>(null);
 
   const handlePosted = useCallback((post: Post) => {
     setLastPost(post);
   }, []);
+
+  // Close search when leaving discover tab
+  useEffect(() => {
+    if (tab !== "discover") setSearchOpen(false);
+  }, [tab]);
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -61,7 +67,12 @@ function MainApp() {
       <button
         type="button"
         aria-label="Search"
-        className="grid h-9 w-9 place-items-center rounded-full text-mist-300 hover:bg-white/[0.04]"
+        onClick={() => setSearchOpen((v) => !v)}
+        className={`grid h-9 w-9 place-items-center rounded-full transition-colors ${
+          searchOpen
+            ? "bg-white/[0.08] text-white"
+            : "text-mist-300 hover:bg-white/[0.04]"
+        }`}
       >
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
           <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.6" />
@@ -138,7 +149,11 @@ function MainApp() {
             {tab === "capture" ? (
               <CaptureScreen todaysPost={lastPost} onPosted={handlePosted} />
             ) : tab === "discover" ? (
-              <DiscoverScreen todaysPost={lastPost} />
+              <DiscoverScreen
+                todaysPost={lastPost}
+                searchOpen={searchOpen}
+                onSearchClose={() => setSearchOpen(false)}
+              />
             ) : tab === "map" ? (
               <MapScreen />
             ) : tab === "graph" ? (

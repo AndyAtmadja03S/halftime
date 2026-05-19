@@ -221,3 +221,85 @@ feedRouter.get("/today", requireAuth, async (req, res, next) => {
     next(err);
   }
 });
+
+const searchSchema = z.object({
+  q: z.string().min(1).max(100),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+
+feedRouter.get("/search", optionalAuth, async (req, res, next) => {
+  try {
+    const parsed = searchSchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_query" });
+      return;
+    }
+    const { q, limit } = parsed.data;
+    const userId = req.userId;
+    const term = q.toLowerCase();
+
+    const { data: userMatches } = await supabase
+      .from("users")
+      .select("id")
+      .ilike("username", `%${term}%`)
+      .limit(50);
+    const matchedUserIds = (userMatches ?? []).map((u) => u.id);
+
+    let query = supabase
+      .from("posts")
+      .select(
+        "id, user_id, device_id, audio_path, duration_ms, emoji, category, description, latitude, longitude, created_at, users!posts_user_id_fkey(username)",
+      )
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (matchedUserIds.length > 0) {
+      query = query.or(
+        `description.ilike.%${term}%,category.ilike.%${term}%,emoji.ilike.%${term}%,user_id.in.(${matchedUserIds.join(",")})`,
+      );
+    } else {
+      query = query.or(
+        `description.ilike.%${term}%,category.ilike.%${term}%,emoji.ilike.%${term}%`,
+      );
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const rows = data ?? [];
+    const signed = await Promise.all(
+      rows.map((row) =>
+        supabase.storage.from(BUCKET).createSignedUrl(row.audio_path, 60 * 60),
+      ),
+    );
+
+    const posts = rows.map((row: any, i: number) => {
+      const userRel = row.users;
+      const username = Array.isArray(userRel)
+        ? userRel[0]?.username ?? null
+        : userRel?.username ?? null;
+      return {
+        id: row.id,
+        emoji: row.emoji,
+        category: row.category,
+        description: row.description,
+        duration_ms: row.duration_ms,
+        created_at: row.created_at,
+        latitude: row.latitude,
+        longitude: row.longitude,
+        audio_url: signed[i].data?.signedUrl ?? null,
+        is_mine: userId ? row.user_id === userId || row.device_id === userId : false,
+        handle: username,
+        upvotes: 0,
+        downvotes: 0,
+        score: 0,
+        my_vote: 0,
+        comment_count: 0,
+      };
+    });
+
+    res.json({ posts, nextCursor: null });
+  } catch (err) {
+    next(err);
+  }
+});
