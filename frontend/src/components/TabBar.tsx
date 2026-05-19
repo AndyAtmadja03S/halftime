@@ -1,7 +1,7 @@
 import clsx from "clsx";
 import type { ReactNode } from "react";
 
-export type Tab = "capture" | "discover" | "profile";
+export type Tab = "capture" | "discover" | "graph" | "profile";
 
 interface Props {
   active: Tab;
@@ -54,15 +54,23 @@ const ICONS: Record<Tab, ReactNode> = {
       />
     </svg>
   ),
+  graph: (
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+      <circle cx="6" cy="6" r="2.4" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="18" cy="6" r="2.4" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="12" cy="16" r="2.4" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M8 7l4 8M16 7l-4 8" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  ),
 };
 
-const TABS: Tab[] = ["capture", "discover", "profile"];
+const TABS: Tab[] = ["capture", "discover", "graph", "profile"];
 
 export function TabBar({ active, onChange }: Props) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-line-100 bg-ink-0/95 backdrop-blur">
       <div
-        className="mx-auto grid max-w-md grid-cols-3"
+        className="mx-auto grid max-w-md grid-cols-4"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0) + 8px)" }}
       >
         {TABS.map((tab) => {

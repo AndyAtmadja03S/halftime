@@ -6,6 +6,7 @@ import { CaptureScreen } from "./screens/CaptureScreen";
 import { DiscoverScreen } from "./screens/DiscoverScreen";
 import { MicTest } from "./screens/MicTest";
 import { ProfileScreen } from "./screens/ProfileScreen";
+import { SocialGraphScreen } from "./screens/SocialGraphScreen";
 import type { Post } from "./lib/api";
 
 const IS_MIC_TEST =
@@ -93,6 +94,8 @@ function MainApp() {
               />
             ) : tab === "discover" ? (
               <DiscoverScreen todaysPost={lastPost} />
+            ) : tab === "graph" ? (
+              <SocialGraphScreen />
             ) : (
               <ProfileScreen />
             )}
