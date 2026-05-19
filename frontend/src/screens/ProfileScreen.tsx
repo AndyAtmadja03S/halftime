@@ -20,7 +20,7 @@ function monthOffset(year: number, monthIndex: number, delta: number) {
 
 function formatMonthShort(year: number, monthIndex: number): string {
   const d = new Date(Date.UTC(year, monthIndex, 1));
-  return d.toLocaleString(undefined, { month: "short", year: "2-digit" });
+  return d.toLocaleString(undefined, { month: "short", year: "numeric" });
 }
 
 function currentMonthView() {
