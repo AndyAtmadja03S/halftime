@@ -56,25 +56,27 @@ export function DiscoverScreen({ todaysPost }: Props) {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    fetchFeed({ limit: 50 })
+    fetchFeed({ limit: 50, friends: friendsOnly })
       .then((res) => {
         if (alive) setPosts(res.posts);
       })
-      .catch(() => undefined)
+      .catch(() => {
+        if (alive) setPosts([]);
+      })
       .finally(() => {
         if (alive) setLoading(false);
       });
     return () => {
       alive = false;
     };
-  }, []);
+  }, [friendsOnly]);
 
   useEffect(() => {
-    if (!todaysPost) return;
+    if (!todaysPost || friendsOnly) return;
     setPosts((prev) =>
       prev.some((p) => p.id === todaysPost.id) ? prev : [todaysPost, ...prev],
     );
-  }, [todaysPost]);
+  }, [todaysPost, friendsOnly]);
 
   useEffect(() => {
     return () => {
@@ -123,9 +125,7 @@ export function DiscoverScreen({ todaysPost }: Props) {
 
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
 
-  const visiblePosts = friendsOnly
-    ? posts.filter((p) => p.is_mine)
-    : posts;
+  const visiblePosts = posts;
 
   return (
     <div className="relative flex h-full flex-col bg-black font-sans text-white antialiased overflow-x-hidden">

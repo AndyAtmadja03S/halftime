@@ -38,6 +38,12 @@ export interface AuthResponse {
   user: AuthUser;
 }
 
+export interface FriendUser {
+  id: string;
+  username: string;
+  displayName: string;
+}
+
 function baseHeaders(): HeadersInit {
   return {
     "x-device-id": getDeviceId(),
@@ -114,11 +120,13 @@ export async function fetchFeed(params: {
   before?: string;
   limit?: number;
   mine?: boolean;
+  friends?: boolean;
 } = {}): Promise<FeedResponse> {
   const qs = new URLSearchParams();
   if (params.before) qs.set("before", params.before);
   if (params.limit) qs.set("limit", String(params.limit));
   if (params.mine) qs.set("mine", "1");
+  if (params.friends) qs.set("friends", "1");
   const res = await fetch(`/api/feed?${qs.toString()}`, {
     headers: authHeaders(),
   });
@@ -192,4 +200,49 @@ export async function uploadPost(
 export async function fetchStats(): Promise<MeStats> {
   const res = await fetch(`/api/me/stats`, { headers: authHeaders() });
   return handle<MeStats>(res);
+}
+
+export async function fetchFriends(): Promise<{ friends: FriendUser[] }> {
+  const res = await fetch(`/api/friends`, { headers: authHeaders() });
+  return handle(res);
+}
+
+export async function fetchFriendRequests(): Promise<{ incoming: FriendUser[] }> {
+  const res = await fetch(`/api/friends/requests`, { headers: authHeaders() });
+  return handle(res);
+}
+
+export async function sendFriendRequest(
+  code: string,
+): Promise<{ status: "pending" | "accepted" }> {
+  const res = await fetch(`/api/friends/requests`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  return handle(res);
+}
+
+export async function acceptFriendRequest(userId: string): Promise<void> {
+  const res = await fetch(`/api/friends/requests/${userId}/accept`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  await handle(res);
+}
+
+export async function declineFriendRequest(userId: string): Promise<void> {
+  const res = await fetch(`/api/friends/requests/${userId}/decline`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  await handle(res);
+}
+
+export async function removeFriend(userId: string): Promise<void> {
+  const res = await fetch(`/api/friends/${userId}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  await handle(res);
 }

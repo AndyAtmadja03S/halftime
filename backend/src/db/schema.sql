@@ -61,3 +61,14 @@ create index if not exists posts_created_at_idx on posts (created_at desc);
 create index if not exists posts_device_created_idx on posts (device_id, created_at desc);
 create index if not exists sessions_user_idx on sessions (user_id);
 create index if not exists sessions_expires_idx on sessions (expires_at);
+
+-- Shareable friend codes: 8 chars from Crockford base32 (0-9, A-Z minus I, L, O, U).
+-- Stored uppercase, no hyphen. Client displays as XXXX-XXXX.
+alter table users add column if not exists friend_code text;
+create unique index if not exists users_friend_code_unique
+  on users (friend_code) where friend_code is not null;
+
+create index if not exists friendships_pair_status_idx
+  on friendships (user_id, friend_id, status);
+create index if not exists friendships_friend_user_status_idx
+  on friendships (friend_id, user_id, status);

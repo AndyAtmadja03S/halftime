@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { getAcceptedFriendIds } from "../lib/friends.js";
 import { BUCKET, supabase } from "../lib/supabase.js";
 import { optionalAuth, requireAuth } from "../middleware/auth.js";
 
@@ -7,6 +8,7 @@ const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
   before: z.string().datetime().optional(),
   mine: z.coerce.boolean().optional(),
+  friends: z.coerce.boolean().optional(),
 });
 
 export const feedRouter = Router();
@@ -18,11 +20,56 @@ feedRouter.get("/", optionalAuth, async (req, res, next) => {
       res.status(400).json({ error: "invalid_query" });
       return;
     }
-    const { limit, before, mine } = parsed.data;
+    const { limit, before, mine, friends } = parsed.data;
     const userId = req.userId;
 
-    if (mine && !userId) {
+    if (mine && friends) {
+      res.status(400).json({ error: "invalid_query" });
+      return;
+    }
+    if ((mine || friends) && !userId) {
       res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+
+    if (friends && userId) {
+      const friendIds = await getAcceptedFriendIds(userId);
+      if (friendIds.length === 0) {
+        res.json({ posts: [], nextCursor: null });
+        return;
+      }
+      let q = supabase
+        .from("posts")
+        .select(
+          "id, user_id, device_id, audio_path, duration_ms, emoji, category, description, latitude, longitude, created_at, post_date",
+        )
+        .order("created_at", { ascending: false })
+        .limit(limit)
+        .in("user_id", friendIds);
+      if (before) q = q.lt("created_at", before);
+      const { data, error } = await q;
+      if (error) throw error;
+      const rows = data ?? [];
+      const signed = await Promise.all(
+        rows.map((row) =>
+          supabase.storage.from(BUCKET).createSignedUrl(row.audio_path, 60 * 60),
+        ),
+      );
+      const posts = rows.map((row, i) => ({
+        id: row.id,
+        emoji: row.emoji,
+        category: row.category,
+        description: row.description,
+        duration_ms: row.duration_ms,
+        created_at: row.created_at,
+        latitude: row.latitude,
+        longitude: row.longitude,
+        audio_url: signed[i].data?.signedUrl ?? null,
+        is_mine: row.user_id === userId || row.device_id === userId,
+      }));
+      const nextCursor =
+        posts.length === limit ? posts[posts.length - 1].created_at : null;
+      res.json({ posts, nextCursor });
       return;
     }
 

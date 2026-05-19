@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
+import { fetchFriends, type FriendUser } from "../lib/api";
+import { getStoredUser } from "../lib/auth";
 
-interface MockUser {
+interface GraphNode {
   id: string;
   handle: string;
-  totalCaptures: number;
+  username: string | null;
   isMe?: boolean;
   x3: number;
   y3: number;
@@ -14,7 +16,6 @@ interface MockUser {
 interface Connection {
   from: string;
   to: string;
-  soundsInCommon: number;
 }
 
 function spherePoint(index: number, total: number, radius: number) {
@@ -30,37 +31,6 @@ function spherePoint(index: number, total: number, radius: number) {
 }
 
 const NODE_RADIUS = 140;
-
-const MOCK_USERS: MockUser[] = [
-  { id: "me", handle: "YOU", totalCaptures: 142, isMe: true, x3: 0, y3: 0, z3: 0 },
-  { id: "u1", handle: "VOID LISTENER", totalCaptures: 128, ...spherePoint(0, 7, NODE_RADIUS) },
-  { id: "u2", handle: "QUIET WANDERER", totalCaptures: 87, ...spherePoint(1, 7, NODE_RADIUS) },
-  { id: "u3", handle: "DRIFT ECHO", totalCaptures: 156, ...spherePoint(2, 7, NODE_RADIUS) },
-  { id: "u4", handle: "SOFT SIGNAL", totalCaptures: 64, ...spherePoint(3, 7, NODE_RADIUS) },
-  { id: "u5", handle: "RAIN STATION", totalCaptures: 203, ...spherePoint(4, 7, NODE_RADIUS) },
-  { id: "u6", handle: "NEON HARBOR", totalCaptures: 92, ...spherePoint(5, 7, NODE_RADIUS) },
-  { id: "u7", handle: "AMBER FIELD", totalCaptures: 111, ...spherePoint(6, 7, NODE_RADIUS) },
-];
-
-const MOCK_CONNECTIONS: Connection[] = [
-  { from: "me", to: "u1", soundsInCommon: 24 },
-  { from: "me", to: "u2", soundsInCommon: 18 },
-  { from: "me", to: "u3", soundsInCommon: 31 },
-  { from: "me", to: "u5", soundsInCommon: 12 },
-  { from: "u1", to: "u2", soundsInCommon: 19 },
-  { from: "u1", to: "u3", soundsInCommon: 15 },
-  { from: "u2", to: "u4", soundsInCommon: 9 },
-  { from: "u3", to: "u5", soundsInCommon: 22 },
-  { from: "u3", to: "u7", soundsInCommon: 14 },
-  { from: "u5", to: "u6", soundsInCommon: 17 },
-];
-
-const directFriendIds = new Set(
-  MOCK_CONNECTIONS
-    .filter((c) => c.from === "me" || c.to === "me")
-    .map((c) => (c.from === "me" ? c.to : c.from))
-);
-
 
 const AUTO_ROTATE_Y = 0.045;
 const FOCAL = 420;
@@ -99,7 +69,69 @@ function project(
 export function SocialGraphScreen() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const usersRef = useRef<MockUser[]>(MOCK_USERS);
+
+  const [friends, setFriends] = useState<FriendUser[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    fetchFriends()
+      .then((res) => {
+        if (alive) setFriends(res.friends);
+      })
+      .catch(() => {
+        if (alive) setFriends([]);
+      })
+      .finally(() => {
+        if (alive) setLoaded(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const storedUser = getStoredUser();
+  const meLabel = storedUser?.displayName ?? storedUser?.username ?? "YOU";
+
+  const nodes = useMemo<GraphNode[]>(() => {
+    const list: GraphNode[] = [
+      {
+        id: "me",
+        handle: meLabel,
+        username: storedUser?.username ?? null,
+        isMe: true,
+        x3: 0,
+        y3: 0,
+        z3: 0,
+      },
+    ];
+    friends.forEach((f, i) => {
+      list.push({
+        id: f.id,
+        handle: f.displayName,
+        username: f.username,
+        ...spherePoint(i, Math.max(2, friends.length), NODE_RADIUS),
+      });
+    });
+    return list;
+  }, [friends, meLabel, storedUser?.username]);
+
+  const connections = useMemo<Connection[]>(
+    () => friends.map((f) => ({ from: "me", to: f.id })),
+    [friends],
+  );
+
+  const directFriendIds = useMemo(
+    () => new Set(friends.map((f) => f.id)),
+    [friends],
+  );
+
+  const usersRef = useRef<GraphNode[]>(nodes);
+  const connectionsRef = useRef<Connection[]>(connections);
+  const directFriendIdsRef = useRef<Set<string>>(directFriendIds);
+  useEffect(() => { usersRef.current = nodes; }, [nodes]);
+  useEffect(() => { connectionsRef.current = connections; }, [connections]);
+  useEffect(() => { directFriendIdsRef.current = directFriendIds; }, [directFriendIds]);
 
   const rotationRef = useRef({ x: -0.35, y: 0 });
   const zoomRef = useRef(1);
@@ -134,6 +166,8 @@ export function SocialGraphScreen() {
     const cx = W / 2;
     const cy = H / 2;
     const users = usersRef.current;
+    const conns = connectionsRef.current;
+    const friendSet = directFriendIdsRef.current;
     const selected = selectedUserRef.current;
     const hovered = hoveredUserRef.current;
     const { x: rotX, y: rotY } = rotationRef.current;
@@ -164,24 +198,12 @@ export function SocialGraphScreen() {
     const posById = new Map(projected.map((p) => [p.user.id, p]));
 
     // Edges
-    for (const conn of MOCK_CONNECTIONS) {
+    for (const conn of conns) {
       const from = posById.get(conn.from);
       const to = posById.get(conn.to);
       if (!from || !to) continue;
-      const involvesMe = conn.from === "me" || conn.to === "me";
-      const connectsDirectFriends =
-        directFriendIds.has(conn.from) && directFriendIds.has(conn.to);
-
-      if (involvesMe) {
-        ctx.strokeStyle = `rgba(52, 211, 153, 0.7)`;
-        ctx.lineWidth = 2;
-      } else if (connectsDirectFriends) {
-        ctx.strokeStyle = `rgba(147, 197, 253, 0.4)`;
-        ctx.lineWidth = 1.5;
-      } else {
-        ctx.strokeStyle = `rgba(255, 255, 255, 0.08)`;
-        ctx.lineWidth = 1;
-      }
+      ctx.strokeStyle = `rgba(52, 211, 153, 0.7)`;
+      ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(from.sx, from.sy);
       ctx.lineTo(to.sx, to.sy);
@@ -193,13 +215,11 @@ export function SocialGraphScreen() {
       const isSelected = selected === u.id;
       const isHovered = hovered === u.id;
       const isMe = u.isMe === true;
-      const isDirectFriend = directFriendIds.has(u.id);
-
+      const isDirectFriend = friendSet.has(u.id);
 
       const baseR = isMe ? 26 : isSelected ? 28 : isHovered ? 24 : 20;
       const radius = baseR * Math.max(0.55, depthScale);
 
-      // Glow
       ctx.fillStyle = isMe
         ? `rgba(16, 185, 129, 0.25)`
         : isDirectFriend
@@ -209,7 +229,6 @@ export function SocialGraphScreen() {
       ctx.arc(sx, sy, radius + 12 * depthScale, 0, Math.PI * 2);
       ctx.fill();
 
-      // Fill
       ctx.fillStyle = isMe
         ? `#10b981`
         : isDirectFriend
@@ -219,7 +238,6 @@ export function SocialGraphScreen() {
       ctx.arc(sx, sy, radius, 0, Math.PI * 2);
       ctx.fill();
 
-      // Border
       ctx.strokeStyle = isMe
         ? `#34d399`
         : isDirectFriend
@@ -230,7 +248,6 @@ export function SocialGraphScreen() {
       ctx.arc(sx, sy, radius, 0, Math.PI * 2);
       ctx.stroke();
 
-      // YOU label
       if (isMe) {
         ctx.fillStyle = "#ffffff";
         ctx.font = `bold ${Math.round(8 * Math.max(0.7, depthScale))}px sans-serif`;
@@ -349,11 +366,9 @@ export function SocialGraphScreen() {
     zoomRef.current = Math.max(0.55, Math.min(2.2, next));
   };
 
-  const selectedUserData = MOCK_USERS.find((u) => u.id === selectedUser);
-  const connections = MOCK_CONNECTIONS.filter(
-    (c) => c.from === selectedUser || c.to === selectedUser,
-  );
-  const friendCount = directFriendIds.size;
+  const selectedUserData = nodes.find((u) => u.id === selectedUser);
+  const friendCount = friends.length;
+  const showEmptyState = loaded && friendCount === 0;
 
   return (
     <div className="relative flex h-full w-full flex-col bg-ink-0">
@@ -375,11 +390,12 @@ export function SocialGraphScreen() {
           className="pointer-events-none absolute top-4 left-4 flex flex-col gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs backdrop-blur"
         >
           <p className="text-mist-200 uppercase tracking-wider">Your Network</p>
-          <p className="text-[11px] text-mist-100">{friendCount} friends connected</p>
+          <p className="text-[11px] text-mist-100">
+            {friendCount} {friendCount === 1 ? "friend" : "friends"} connected
+          </p>
         </motion.div>
 
-        {/* Legend */}
-<motion.div
+        <motion.div
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.05 }}
@@ -395,17 +411,34 @@ export function SocialGraphScreen() {
           </div>
         </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.08 }}
-          className="pointer-events-none absolute bottom-4 left-4 max-w-[220px] rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs backdrop-blur"
-        >
-          <p className="text-mist-200 uppercase tracking-wider">Explore</p>
-          <p className="mt-1 text-[11px] leading-relaxed text-mist-100">
-            Drag to orbit · scroll to zoom · tap a friend for details
-          </p>
-        </motion.div>
+        {showEmptyState ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.4 }}
+            className="pointer-events-none absolute inset-0 grid place-items-center px-6 text-center"
+          >
+            <div className="max-w-[260px] rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-4 backdrop-blur">
+              <p className="text-sm text-mist-300">No friends yet</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-mist-100">
+                Share your code from your profile to start building your
+                network.
+              </p>
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.08 }}
+            className="pointer-events-none absolute bottom-4 left-4 max-w-[220px] rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs backdrop-blur"
+          >
+            <p className="text-mist-200 uppercase tracking-wider">Explore</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-mist-100">
+              Drag to orbit · scroll to zoom · tap a friend for details
+            </p>
+          </motion.div>
+        )}
       </div>
 
       <motion.div
@@ -418,27 +451,27 @@ export function SocialGraphScreen() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.35 }}
           >
-            <div className="mb-3 flex items-center justify-between">
-              <div>
+            <div className="mb-1 flex items-center justify-between">
+              <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <div className={`h-2 w-2 rounded-full ${
-                    selectedUserData.isMe
-                      ? "bg-emerald-400"
-                      : directFriendIds.has(selectedUserData.id)
-                        ? "bg-indigo-400"
-                        : "bg-neutral-500"
-                  }`} />
-                  <h3 className="text-lg font-semibold text-mist-500">
+                  <div
+                    className={`h-2 w-2 rounded-full ${
+                      selectedUserData.isMe
+                        ? "bg-emerald-400"
+                        : "bg-blue-300"
+                    }`}
+                  />
+                  <h3 className="truncate text-lg font-semibold text-mist-500">
                     {selectedUserData.isMe ? "You" : selectedUserData.handle}
                   </h3>
                 </div>
-                <p className="text-xs text-mist-200">
-                    {selectedUserData.isMe
-                    ? "Your profile"
-                    : directFriendIds.has(selectedUserData.id)
-                      ? "Direct friend"
-                      : "Not connected"
-                  } · {selectedUserData.totalCaptures} sounds captured
+                {selectedUserData.username && (
+                  <p className="mt-1 truncate text-[11px] tracking-[var(--tracking-chrome)] text-mist-100 uppercase">
+                    @{selectedUserData.username}
+                  </p>
+                )}
+                <p className="mt-1 text-xs text-mist-200">
+                  {selectedUserData.isMe ? "Your profile" : "Direct friend"}
                 </p>
               </div>
               <button
@@ -449,50 +482,13 @@ export function SocialGraphScreen() {
                 ✕
               </button>
             </div>
-
-            {connections.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-xs uppercase tracking-wider text-mist-200">
-                  {selectedUserData.isMe ? "Your friends" : "Connections"}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {connections.map((conn) => {
-                    const connectedId = conn.from === selectedUser ? conn.to : conn.from;
-                    const connectedUser = MOCK_USERS.find((u) => u.id === connectedId);
-                    if (!connectedUser) return null;
-                    const dotColor = connectedUser.isMe
-                      ? "bg-emerald-400"
-                      : directFriendIds.has(connectedUser.id)
-                        ? "bg-indigo-400"
-                        : "bg-neutral-500";
-                    return (
-                      <motion.button
-                        key={connectedId}
-                        type="button"
-                        onClick={() => setSelectedUser(connectedId)}
-                        initial={{ scale: 0.96, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        transition={{ duration: 0.25 }}
-                        className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 transition hover:bg-white/[0.08]"
-                      >
-                        <div className={`h-2 w-2 rounded-full ${dotColor}`} />
-                        <span className="text-xs text-mist-300">
-                          {connectedUser.isMe ? "You" : connectedUser.handle}
-                        </span>
-                        <span className="font-mono text-[10px] text-mist-100">
-                          {conn.soundsInCommon} sounds
-                        </span>
-                      </motion.button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
           </motion.div>
         ) : (
           <div className="py-2 text-center">
             <p className="text-xs uppercase tracking-wider text-mist-200">
-              Tap a node to explore your network
+              {showEmptyState
+                ? "Add a friend from your profile to start"
+                : "Tap a node to explore your network"}
             </p>
           </div>
         )}

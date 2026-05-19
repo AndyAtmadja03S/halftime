@@ -1,8 +1,16 @@
 import { motion } from "framer-motion";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AddFriendSheet } from "../components/AddFriendSheet";
 import { AuthModal } from "../components/AuthModal";
 import { MemoriesCalendar } from "../components/MemoriesCalendar";
-import { fetchStats, type MeStats } from "../lib/api";
+import {
+  acceptFriendRequest,
+  declineFriendRequest,
+  fetchFriendRequests,
+  fetchStats,
+  type FriendUser,
+  type MeStats,
+} from "../lib/api";
 import { getStoredUser } from "../lib/auth";
 
 function monthOffset(year: number, monthIndex: number, delta: number) {
@@ -20,6 +28,13 @@ function currentMonthView() {
   return { year: now.getUTCFullYear(), monthIndex: now.getUTCMonth() };
 }
 
+function formatFriendCode(raw: string | null | undefined): string {
+  if (!raw) return "";
+  const stripped = raw.replace(/-/g, "").toUpperCase();
+  if (stripped.length !== 8) return stripped;
+  return `${stripped.slice(0, 4)}-${stripped.slice(4)}`;
+}
+
 interface Props {
   authed: boolean;
   onAuthChange: (v: boolean) => void;
@@ -27,15 +42,28 @@ interface Props {
 
 export function ProfileScreen({ authed, onAuthChange }: Props) {
   const storedUser = getStoredUser();
+  const friendCode = storedUser?.friendCode ?? null;
+
   const [stats, setStats] = useState<MeStats | null>(null);
   const [loading, setLoading] = useState(authed);
   const [authOpen, setAuthOpen] = useState(false);
   const [view, setView] = useState(currentMonthView);
+  const [addOpen, setAddOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [incoming, setIncoming] = useState<FriendUser[]>([]);
+  const [pendingAction, setPendingAction] = useState<Set<string>>(new Set());
+
+  const refreshRequests = useCallback(() => {
+    fetchFriendRequests()
+      .then((r) => setIncoming(r.incoming))
+      .catch(() => setIncoming([]));
+  }, []);
 
   useEffect(() => {
     if (!authed) {
       setLoading(false);
       setStats(null);
+      setIncoming([]);
       return;
     }
     setLoading(true);
@@ -43,7 +71,8 @@ export function ProfileScreen({ authed, onAuthChange }: Props) {
       .then(setStats)
       .catch(() => setStats(null))
       .finally(() => setLoading(false));
-  }, [authed]);
+    refreshRequests();
+  }, [authed, refreshRequests]);
 
   const latestView = useMemo(() => {
     if (stats?.firstActive) {
@@ -75,6 +104,38 @@ export function ProfileScreen({ authed, onAuthChange }: Props) {
     const latestStart = new Date(Date.UTC(latestView.year, latestView.monthIndex, 1));
     return viewStart < latestStart;
   }, [view, latestView]);
+
+  const copyCode = async () => {
+    if (!friendCode) return;
+    try {
+      await navigator.clipboard.writeText(friendCode);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch {
+      // clipboard blocked; silently ignore
+    }
+  };
+
+  const respondToRequest = async (
+    userId: string,
+    action: "accept" | "decline",
+  ) => {
+    setPendingAction((s) => new Set(s).add(userId));
+    const previous = incoming;
+    setIncoming((rows) => rows.filter((r) => r.id !== userId));
+    try {
+      if (action === "accept") await acceptFriendRequest(userId);
+      else await declineFriendRequest(userId);
+    } catch {
+      setIncoming(previous);
+    } finally {
+      setPendingAction((s) => {
+        const next = new Set(s);
+        next.delete(userId);
+        return next;
+      });
+    }
+  };
 
   if (!authed) {
     return (
@@ -148,6 +209,86 @@ export function ProfileScreen({ authed, onAuthChange }: Props) {
         </motion.div>
       </section>
 
+      <section className="rounded-2xl border border-line-200 bg-ink-200 p-4">
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] tracking-[var(--tracking-chrome)] text-mist-100 uppercase">
+            Your Code
+          </p>
+          {copied && (
+            <motion.span
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="text-[10px] tracking-[var(--tracking-chrome)] text-mist-400 uppercase"
+            >
+              Copied
+            </motion.span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={copyCode}
+          disabled={!friendCode}
+          className="mt-2 w-full text-left font-mono text-2xl tracking-[0.25em] text-mist-500 transition hover:opacity-80 disabled:opacity-60"
+        >
+          {friendCode ? formatFriendCode(friendCode) : "Generating…"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setAddOpen(true)}
+          className="mt-4 w-full rounded-lg border border-line-200 px-4 py-2.5 text-xs font-medium tracking-[var(--tracking-chrome)] text-mist-300 uppercase transition hover:bg-white/[0.04]"
+        >
+          Add a friend
+        </button>
+      </section>
+
+      {incoming.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <p className="text-[10px] tracking-[var(--tracking-chrome)] text-mist-100 uppercase">
+            Pending Requests
+          </p>
+          <ul className="flex flex-col gap-2">
+            {incoming.map((u) => {
+              const busy = pendingAction.has(u.id);
+              return (
+                <li
+                  key={u.id}
+                  className="flex items-center justify-between rounded-xl border border-line-200 bg-ink-200 px-4 py-3"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm text-mist-500">
+                      {u.displayName}
+                    </p>
+                    <p className="truncate text-[10px] tracking-[var(--tracking-chrome)] text-mist-100 uppercase">
+                      @{u.username}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void respondToRequest(u.id, "decline")}
+                      className="rounded-full border border-line-200 px-3 py-1.5 text-[11px] font-medium tracking-[var(--tracking-chrome)] text-mist-200 uppercase transition hover:bg-white/[0.04] disabled:opacity-50"
+                    >
+                      Decline
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void respondToRequest(u.id, "accept")}
+                      style={{ color: "var(--color-ink-300)" }}
+                      className="rounded-full border border-mist-500 bg-mist-500 px-3 py-1.5 text-[11px] font-medium tracking-[var(--tracking-chrome)] uppercase transition disabled:opacity-50"
+                    >
+                      Accept
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
       <section className="grid grid-cols-2 gap-3">
         <StatCard label="Total Captures" value={String(stats.totalCaptures)} />
         <StatCard
@@ -164,6 +305,12 @@ export function ProfileScreen({ authed, onAuthChange }: Props) {
         hasNext={hasNext}
         onPrev={() => setView(monthOffset(view.year, view.monthIndex, -1))}
         onNext={() => setView(monthOffset(view.year, view.monthIndex, +1))}
+      />
+
+      <AddFriendSheet
+        isOpen={addOpen}
+        onClose={() => setAddOpen(false)}
+        onSuccess={refreshRequests}
       />
     </div>
   );
