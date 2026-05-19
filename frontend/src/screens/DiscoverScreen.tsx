@@ -48,6 +48,7 @@ function formatRelativeTime(iso: string): string {
 export function DiscoverScreen({ todaysPost }: Props) {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
+  const [friendsOnly, setFriendsOnly] = useState(false);
 
   const [playingPostId, setPlayingPostId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -119,25 +120,57 @@ export function DiscoverScreen({ todaysPost }: Props) {
       }
     }
   };
+
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
 
+  const visiblePosts = friendsOnly
+    ? posts.filter((p) => p.is_mine)
+    : posts;
+
   return (
-    <div className="relative flex h-full flex-col bg-black font-sans text-white antialiased">
-      <div className="flex-1 space-y-[11px] overflow-y-auto px-4 pt-3 pb-8">
+    <div className="relative flex h-full flex-col bg-black font-sans text-white antialiased overflow-x-hidden">
+      <div className="flex gap-2 px-4 pt-3 pb-2">
+      <button
+        type="button"
+        onClick={() => setFriendsOnly(false)}
+        className={`rounded-full px-4 py-1.5 text-[12px] font-semibold tracking-wider uppercase transition-colors duration-200 ${
+          !friendsOnly
+            ? "bg-neutral-600 text-white"
+            : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200"
+        }`}
+      >
+        Everyone
+      </button>
+      <button
+        type="button"
+        onClick={() => setFriendsOnly(true)}
+        className={`rounded-full px-4 py-1.5 text-[12px] font-semibold tracking-wider uppercase transition-colors duration-200 ${
+          friendsOnly
+            ? "bg-neutral-600 text-white"
+            : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200"
+        }`}
+      >
+        Friends
+      </button>
+    </div>
+
+      <div className="flex-1 space-y-[11px] overflow-y-auto overflow-x-hidden px-4 pt-1 pb-8">
         {loading ? (
           <div className="grid h-48 place-items-center">
             <p className="animate-pulse rounded-full border border-neutral-900 bg-neutral-950/40 px-3 py-1 text-[10px] tracking-widest text-neutral-400 uppercase backdrop-blur">
               Tuning in…
             </p>
           </div>
-        ) : posts.length === 0 ? (
+        ) : visiblePosts.length === 0 ? (
           <div className="grid h-48 place-items-center">
             <p className="rounded-full border border-neutral-900 bg-neutral-950/40 px-3 py-1 text-[10px] tracking-widest text-neutral-400 uppercase backdrop-blur">
-              No one has spoken yet today
+              {friendsOnly
+                ? "None of your friends have posted yet"
+                : "No one has spoken yet today"}
             </p>
           </div>
         ) : (
-          posts.map((post, index) => {
+          visiblePosts.map((post, index) => {
             const isCurrentlyPlaying = playingPostId === post.id;
             const canPlay = post.audio_url !== null;
             const accountLabel = post.is_mine
@@ -257,10 +290,11 @@ export function DiscoverScreen({ todaysPost }: Props) {
           })
         )}
       </div>
-      <SoundDetailModal 
-        post={selectedPost} 
-        isOpen={!!selectedPost} 
-        onClose={() => setSelectedPost(null)} 
+
+      <SoundDetailModal
+        post={selectedPost}
+        isOpen={!!selectedPost}
+        onClose={() => setSelectedPost(null)}
       />
     </div>
   );

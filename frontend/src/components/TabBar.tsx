@@ -1,7 +1,7 @@
 import clsx from "clsx";
 import type { ReactNode } from "react";
 
-export type Tab = "capture" | "discover" | "graph" | "profile";
+export type Tab = "capture" | "discover" | "map" | "graph" | "profile";
 
 interface Props {
   active: Tab;
@@ -10,7 +10,7 @@ interface Props {
 
 const ICONS: Record<Tab, ReactNode> = {
   capture: (
-    <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none">
       <circle
         cx="12"
         cy="12"
@@ -54,6 +54,17 @@ const ICONS: Record<Tab, ReactNode> = {
       />
     </svg>
   ),
+  map: (
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+      <path
+        d="M9 4L3 7v13l6-3 6 3 6-3V4l-6 3-6-3z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+      <path d="M9 4v13M15 7v13" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  ),
   graph: (
     <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
       <circle cx="6" cy="6" r="2.4" stroke="currentColor" strokeWidth="1.4" />
@@ -64,17 +75,45 @@ const ICONS: Record<Tab, ReactNode> = {
   ),
 };
 
-const TABS: Tab[] = ["capture", "discover", "graph", "profile"];
+const TABS: Tab[] = ["discover", "map", "capture", "graph", "profile"];
 
 export function TabBar({ active, onChange }: Props) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-line-100 bg-ink-0/95 backdrop-blur">
       <div
-        className="mx-auto grid max-w-md grid-cols-4"
+        className="mx-auto grid max-w-md grid-cols-5 items-end"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0) + 8px)" }}
       >
         {TABS.map((tab) => {
           const isActive = tab === active;
+
+          if (tab === "capture") {
+            return (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => onChange(tab)}
+                aria-label={tab}
+                aria-pressed={isActive}
+                className="-mt-5 grid place-items-center pb-2"
+              >
+                <span
+                  className={clsx(
+                    "grid h-[50px] w-[50px] place-items-center rounded-full text-ink-0",
+                    "bg-white/90",
+                    "shadow-[0_3px_18px_rgba(255,255,255,0.12)]",
+                    "transition-all duration-200",
+                    isActive
+                      ? "scale-[1.08] shadow-[0_3px_24px_rgba(255,255,255,0.22)]"
+                      : "hover:scale-[1.04] hover:shadow-[0_3px_20px_rgba(255,255,255,0.18)]",
+                  )}
+                >
+                  {ICONS.capture}
+                </span>
+              </button>
+            );
+          }
+
           return (
             <button
               key={tab}
