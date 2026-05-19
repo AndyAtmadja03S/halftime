@@ -337,7 +337,7 @@ export async function removeFriend(userId: string): Promise<void> {
 
 export async function searchFeed(q: string, limit = 20): Promise<FeedResponse> {
   const qs = new URLSearchParams({ q, limit: String(limit) });
-  const res = await fetch(`/api/feed/search?${qs.toString()}`, {
+  const res = await fetch(apiUrl(`/api/feed/search?${qs.toString()}`), {
     headers: authHeaders(),
   });
   return handle<FeedResponse>(res);
